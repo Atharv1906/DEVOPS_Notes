@@ -1713,5 +1713,1743 @@ Every secret access is logged in CloudTrail/Vault audit logs — who accessed wh
         },
       ],
     },
+    {
+      id: "cicd-pipelines",
+      title: "CI/CD Pipelines",
+      level: "intermediate",
+      description: "Build production-grade CI/CD pipelines with pipeline rules, MR pipelines, and environment promotion.",
+      lessons: [
+        {
+          id: "pipeline-fundamentals",
+          title: "CI/CD Pipeline Fundamentals",
+          duration: 22,
+          type: "lesson",
+          description: "Understand CI/CD concepts, pipeline stages, and how modern pipelines are structured.",
+          objectives: [
+            "Explain the difference between CI and CD",
+            "Design a multi-stage pipeline with gates",
+            "Understand pipeline triggers and conditions",
+            "Implement fail-fast strategies and parallel jobs",
+          ],
+          content: `# CI/CD Pipeline Fundamentals
+
+## What is CI/CD?
+
+**Continuous Integration (CI)**: Automatically build, test, and validate every code change the moment it's pushed. Catch bugs in minutes, not days.
+
+**Continuous Delivery (CD)**: Automatically deploy validated code to staging environments. Every merge to main is a deployable artifact.
+
+**Continuous Deployment**: Every passing pipeline automatically deploys to production. No human gate. Used by Netflix, Amazon (deploys every 11.7 seconds), and Etsy.
+
+\`\`\`
+Developer pushes code
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│                   CI Pipeline                           │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
+│  │  Build   │→ │   Test   │→ │  Scan    │→ │Package │ │
+│  │ compile  │  │unit/intg │  │SAST/SCA  │  │ image  │ │
+│  │ lint     │  │coverage  │  │secrets   │  │ helm   │ │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘ │
+└─────────────────────────────────────────────────────────┘
+       │
+       ▼ (on main branch only)
+┌─────────────────────────────────────────────────────────┐
+│                   CD Pipeline                           │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
+│  │  Deploy  │→ │  Deploy  │→ │  Deploy Production   │  │
+│  │   Dev    │  │ Staging  │  │  (manual approval)   │  │
+│  └──────────┘  └──────────┘  └──────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+\`\`\`
+
+## GitLab CI/CD Pipeline Structure
+
+GitLab CI is defined in \`.gitlab-ci.yml\` at the repo root.
+
+\`\`\`yaml
+# .gitlab-ci.yml — complete production pipeline example
+image: node:20-alpine
+
+stages:
+  - build
+  - test
+  - scan
+  - package
+  - deploy-dev
+  - deploy-staging
+  - deploy-prod
+
+variables:
+  IMAGE_NAME: \${CI_REGISTRY_IMAGE}:\${CI_COMMIT_SHA}
+  DOCKER_BUILDKIT: "1"
+
+# ── Build ──────────────────────────────────────────────
+build:
+  stage: build
+  script:
+    - npm ci --cache .npm
+    - npm run build
+  cache:
+    key: \${CI_COMMIT_REF_SLUG}
+    paths:
+      - .npm/
+      - node_modules/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 hour
+
+# ── Test ───────────────────────────────────────────────
+unit-tests:
+  stage: test
+  script:
+    - npm run test:unit -- --coverage
+  coverage: '/Lines\\s*:\\s*(\\d+\\.\\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+      junit: coverage/junit.xml
+
+integration-tests:
+  stage: test
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    POSTGRES_DB: testdb
+    POSTGRES_USER: testuser
+    POSTGRES_PASSWORD: testpass
+  script:
+    - npm run test:integration
+
+# ── Scan ───────────────────────────────────────────────
+sast:
+  stage: scan
+  include:
+    - template: Security/SAST.gitlab-ci.yml
+
+dependency-scan:
+  stage: scan
+  include:
+    - template: Security/Dependency-Scanning.gitlab-ci.yml
+
+secret-detection:
+  stage: scan
+  include:
+    - template: Security/Secret-Detection.gitlab-ci.yml
+
+# ── Package ────────────────────────────────────────────
+build-image:
+  stage: package
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u \$CI_REGISTRY_USER -p \$CI_REGISTRY_PASSWORD \$CI_REGISTRY
+  script:
+    - docker build --cache-from \$CI_REGISTRY_IMAGE:latest -t \$IMAGE_NAME .
+    - docker push \$IMAGE_NAME
+  only:
+    - main
+    - /^release\\/.*/
+
+# ── Deploy Dev ─────────────────────────────────────────
+deploy-dev:
+  stage: deploy-dev
+  environment:
+    name: development
+    url: https://dev.myapp.com
+  script:
+    - helm upgrade --install myapp ./helm/myapp
+        --set image.tag=\${CI_COMMIT_SHA}
+        --namespace dev
+        --atomic --timeout 5m
+  only:
+    - main
+
+# ── Deploy Staging ─────────────────────────────────────
+deploy-staging:
+  stage: deploy-staging
+  environment:
+    name: staging
+    url: https://staging.myapp.com
+  script:
+    - helm upgrade --install myapp ./helm/myapp
+        --set image.tag=\${CI_COMMIT_SHA}
+        --namespace staging
+        --atomic --timeout 5m
+  only:
+    - main
+  needs:
+    - deploy-dev
+
+# ── Deploy Production ──────────────────────────────────
+deploy-prod:
+  stage: deploy-prod
+  environment:
+    name: production
+    url: https://myapp.com
+  script:
+    - helm upgrade --install myapp ./helm/myapp
+        --set image.tag=\${CI_COMMIT_SHA}
+        --namespace production
+        --atomic --timeout 10m
+  when: manual
+  only:
+    - main
+  needs:
+    - deploy-staging
+\`\`\`
+
+## GitHub Actions Equivalent
+
+\`\`\`yaml
+# .github/workflows/pipeline.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- --coverage
+
+  deploy-staging:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: echo "Deploy to staging"
+
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "Deploy to production"
+\`\`\`
+
+## Pipeline Best Practices
+
+**Fail fast**: Run the quickest checks first (lint → unit tests → integration tests → slow scans).
+
+**Parallel jobs**: Run independent stages simultaneously. Unit tests + lint + secret scanning can all run in parallel.
+
+**Cache aggressively**: Cache \`node_modules\`, Maven \`.m2\`, pip packages. Build time drops from 8 minutes to 2.
+
+**Immutable artifacts**: Build once, deploy the same artifact everywhere. Never rebuild for staging vs production.
+
+**Pipeline as code**: The \`.gitlab-ci.yml\` / \`.github/workflows/\` file lives in the repo, version controlled, reviewed in PRs.
+`,
+          interviewQuestions: [
+            {
+              question: "What's the difference between Continuous Delivery and Continuous Deployment?",
+              difficulty: "junior" as const,
+              answer: `**Continuous Delivery**: Every code change that passes the pipeline is deployable to production. But the actual deployment requires a human to approve it. The pipeline validates it *can* be deployed — the human decides *when*.
+
+**Continuous Deployment**: Every code change that passes the pipeline is automatically deployed to production. No human gate. Zero manual steps.
+
+Most companies practice Continuous Delivery, not Continuous Deployment. Continuous Deployment requires very high test coverage (90%+), feature flags, robust monitoring and automated rollback.
+
+Amazon deploys to production every 11.7 seconds — this is continuous deployment. Most enterprises use continuous delivery with a manual approval gate for production.`,
+            },
+            {
+              question: "A pipeline takes 45 minutes to run. How do you speed it up?",
+              difficulty: "mid" as const,
+              answer: `**Step 1: Measure** where time is spent (GitLab pipeline view shows job durations).
+
+**Step 2: Parallelize** independent jobs:
+\`\`\`yaml
+test:
+  parallel:
+    matrix:
+      - SUITE: [unit, integration, e2e-chrome, e2e-firefox]
+\`\`\`
+
+**Step 3: Cache dependencies**:
+\`\`\`yaml
+cache:
+  key: \${CI_COMMIT_REF_SLUG}-\${hashFiles('package-lock.json')}
+  paths: [node_modules/, .npm/]
+\`\`\`
+
+**Step 4: Fail fast ordering** — run lint (30s) before integration tests (10m). Don't wait 20 minutes to find a syntax error.
+
+**Step 5: Docker layer caching** — \`docker build --cache-from \$CI_REGISTRY_IMAGE:latest\`
+
+**Step 6: Scope slow tests** — E2E tests only on main/release branches, not every PR.
+
+Result: A 45-minute pipeline typically drops to 8-12 minutes with parallelization + caching.`,
+            },
+          ],
+        },
+        {
+          id: "pipeline-rules-and-mr",
+          title: "Pipeline Rules, MR Pipelines & Branch Protection",
+          duration: 20,
+          type: "lesson",
+          description: "Control when pipelines run, protect branches, and enforce quality gates on merge requests.",
+          objectives: [
+            "Write pipeline rules to control job execution",
+            "Configure MR pipelines that run against merged results",
+            "Set up branch protection rules to enforce pipeline success",
+            "Implement environment-specific deployment gates",
+          ],
+          content: `# Pipeline Rules, MR Pipelines & Branch Protection
+
+## Pipeline Rules (GitLab)
+
+\`rules:\` provides fine-grained control over when jobs run:
+
+\`\`\`yaml
+deploy-prod:
+  stage: deploy-prod
+  script:
+    - ./deploy.sh production
+  rules:
+    - if: \$CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: \$CI_COMMIT_TAG =~ /^v\\d+\\.\\d+\\.\\d+\$/
+      when: on_success
+    - when: never
+
+unit-tests:
+  stage: test
+  script:
+    - npm test
+  rules:
+    - if: \$CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: \$CI_COMMIT_BRANCH == "main"
+    - if: \$CI_PIPELINE_SOURCE == "schedule"
+      when: never
+
+# Only rebuild docs when doc files change
+docs-build:
+  stage: build
+  script:
+    - mkdocs build
+  rules:
+    - changes:
+        - docs/**/*
+        - mkdocs.yml
+      when: on_success
+    - when: never
+\`\`\`
+
+## MR Pipelines
+
+MR pipelines run against the **merged result** of source + target branch — catching integration conflicts before they land in main.
+
+\`\`\`yaml
+validate-mr:
+  rules:
+    - if: \$CI_PIPELINE_SOURCE == "merge_request_event"
+
+test:
+  script:
+    - npm test
+  rules:
+    - if: \$CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        TEST_FLAGS: "--bail"
+    - if: \$CI_COMMIT_BRANCH == "main"
+      variables:
+        TEST_FLAGS: "--coverage"
+\`\`\`
+
+Enable in **Settings → Merge Requests**:
+- ✅ Pipelines must succeed before merging
+- ✅ All threads must be resolved
+- ✅ Require code owner approval
+
+## Branch Protection Rules
+
+### GitLab (Settings → Repository → Protected Branches)
+
+\`\`\`
+Branch: main
+  Allowed to push:  No one (force push disabled)
+  Allowed to merge: Maintainers only
+  Require code owner approval: ✅
+  Pipeline must succeed: ✅
+
+Branch: release/*
+  Allowed to push:  Developers (hotfixes)
+  Allowed to merge: Maintainers
+  Pipeline must succeed: ✅
+\`\`\`
+
+### GitHub Branch Protection as Terraform
+
+\`\`\`hcl
+resource "github_branch_protection" "main" {
+  repository_id = github_repository.myapp.node_id
+  pattern       = "main"
+
+  required_status_checks {
+    strict   = true
+    contexts = ["build", "test", "sast", "dependency-scan"]
+  }
+
+  required_pull_request_reviews {
+    required_approving_review_count = 2
+    dismiss_stale_reviews           = true
+    require_code_owner_reviews      = true
+  }
+
+  enforce_admins      = true
+  allows_force_pushes = false
+  allows_deletions    = false
+}
+\`\`\`
+
+## Environment Approvals
+
+\`\`\`yaml
+# GitLab: manual approval for production
+deploy-prod:
+  stage: deploy-prod
+  environment:
+    name: production
+    deployment_tier: production
+  script:
+    - helm upgrade --install myapp ./helm/myapp --namespace production
+  when: manual
+  allow_failure: false
+\`\`\`
+
+In GitHub: set **required reviewers** on the \`production\` environment — any workflow deploying to it will pause for approval.
+`,
+          interviewQuestions: [
+            {
+              question: "Why use MR pipelines instead of just branch pipelines?",
+              difficulty: "mid" as const,
+              answer: `Branch pipelines run against your feature branch in isolation. MR pipelines run against the **simulated merged result** — as if you already merged.
+
+This catches:
+
+1. **Integration conflicts**: Your branch adds \`processPayment()\` to billing.js. Another branch merged yesterday adds a conflicting function. Branch pipelines: both green. MR pipeline: fails on the merged result.
+
+2. **Integration test failures**: Your code works in isolation but breaks a test added to main after you branched.
+
+3. **Earlier detection**: Catch conflicts before merge, when they're cheapest to fix — not after, when they become everyone's problem on main.
+
+Setup in GitLab:
+\`\`\`yaml
+rules:
+  - if: \$CI_PIPELINE_SOURCE == "merge_request_event"
+\`\`\`
+
+With "pipelines must succeed" enabled, you can never merge broken code. At scale (20+ developers merging to main), this keeps main perpetually green.`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "artifact-management",
+      title: "Artifacts, Versioning & Promotion",
+      level: "intermediate",
+      description: "Manage build artifacts, semantic versioning, git tags, and promote releases across environments.",
+      lessons: [
+        {
+          id: "artifact-versioning",
+          title: "Artifact Management & Versioning",
+          duration: 20,
+          type: "lesson",
+          description: "Build immutable artifacts, version them semantically, and manage registries.",
+          objectives: [
+            "Implement semantic versioning for releases",
+            "Create versioned Docker images and Helm charts",
+            "Use GitLab/GitHub Package Registry for artifact storage",
+            "Automate versioning with conventional commits",
+          ],
+          content: `# Artifact Management & Versioning
+
+## What is an Artifact?
+
+Anything produced by the build pipeline that gets deployed or used downstream:
+- **Docker images** (container registry)
+- **Helm charts** (OCI registry / chart museum)
+- **npm/pip packages** (package registry)
+- **JAR/WAR files** (Maven/Nexus)
+- **Binary executables** (S3, GitLab packages)
+
+**The golden rule**: Build once, deploy everywhere. Never rebuild for staging vs production. The exact artifact promoted through environments guarantees what you tested is what you deployed.
+
+## Semantic Versioning
+
+\`\`\`
+Format: MAJOR.MINOR.PATCH[-prerelease][+build]
+
+MAJOR: Breaking changes (API incompatible)
+MINOR: New features (backwards compatible)
+PATCH: Bug fixes (backwards compatible)
+
+Examples:
+  1.0.0       → first stable release
+  1.1.0       → new feature added
+  1.1.1       → bug fix
+  2.0.0       → breaking API change
+  1.2.0-rc.1  → release candidate
+\`\`\`
+
+## Git Tags for Release Versioning
+
+\`\`\`bash
+# Create annotated tag (preferred — includes tagger info and date)
+git tag -a v1.2.3 -m "Release 1.2.3 — adds payment retry logic"
+git push origin v1.2.3
+
+# List tags (most recent first)
+git tag -l --sort=-version:refname | head -10
+
+# Tag a specific commit (e.g., for a hotfix)
+git tag -a v1.2.2 abc1234 -m "Hotfix for payment timeout"
+
+# Delete a tag (before it's released)
+git tag -d v1.2.3
+git push origin --delete v1.2.3
+\`\`\`
+
+## Automated Versioning with semantic-release
+
+\`\`\`yaml
+# .gitlab-ci.yml
+semantic-release:
+  stage: release
+  image: node:20
+  script:
+    - npx semantic-release
+  only:
+    - main
+# Reads conventional commits:
+#   feat: add payment retry    → bumps MINOR (1.1.0 → 1.2.0)
+#   fix: timeout on checkout   → bumps PATCH (1.1.0 → 1.1.1)
+#   feat!: new auth API        → bumps MAJOR (1.1.0 → 2.0.0)
+\`\`\`
+
+\`\`\`bash
+# Conventional commit format
+git commit -m "feat: add SQS retry queue for failed payments"
+git commit -m "fix: resolve race condition in order lock"
+git commit -m "feat!: replace REST API with GraphQL"
+\`\`\`
+
+## Docker Image Versioning Strategy
+
+\`\`\`yaml
+build-and-tag:
+  stage: package
+  script:
+    - |
+      VERSION=$(cat VERSION)
+      docker build \
+        -t \$CI_REGISTRY_IMAGE:\$CI_COMMIT_SHA \
+        -t \$CI_REGISTRY_IMAGE:\$VERSION \
+        -t \$CI_REGISTRY_IMAGE:latest \
+        .
+      docker push \$CI_REGISTRY_IMAGE --all-tags
+
+# Tag strategy:
+#   myapp:abc1234   → exact commit SHA (immutable, for debugging)
+#   myapp:v1.2.3    → semver release (immutable)
+#   myapp:latest    → floating, most recent main build (mutable)
+\`\`\`
+
+## Artifact Retention Policies
+
+\`\`\`yaml
+# GitLab CI artifacts — set expiry
+build:
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 week
+
+test-reports:
+  artifacts:
+    reports:
+      junit: junit.xml
+    expire_in: 30 days
+
+# Docker registry cleanup (GitLab):
+# Settings → Packages & Registries → Cleanup policies
+# Keep last N images per tag, remove older than N days
+# Keep images matching regex: v\d+\.\d+\.\d+
+\`\`\`
+`,
+          interviewQuestions: [
+            {
+              question: "Why build once and promote the same artifact rather than rebuilding per environment?",
+              difficulty: "mid" as const,
+              answer: `Rebuilding per environment creates a critical gap: the binary tested in staging differs from the one in production, even if source code is identical. Environmental differences (compiler cache, dependency resolution, OS library versions on the runner) can produce different outputs.
+
+**Problems with rebuild-per-environment:**
+1. Non-deterministic: build 1 and build 2 of the same commit can differ
+2. Dependency drift: a week later you might get a different patch version of a transitive dep
+3. Trust gap: "we tested v1.1.0-build-1 in staging but deployed v1.1.0-build-2 to prod"
+
+**Build once, promote everywhere:**
+\`\`\`
+CI: commit abc1234 → build → myapp:abc1234
+    → test in dev with myapp:abc1234
+    → promote to staging (same image, different config)
+    → promote to prod (same image, different config)
+\`\`\`
+
+What changes between environments is **configuration** (env vars, secrets, replica counts) — not the artifact. Tag images with the git SHA (\`myapp:abc1234\`) — immutable, auditable, traceable back to the exact commit.`,
+            },
+          ],
+        },
+        {
+          id: "artifact-promotion",
+          title: "Artifact Promotion & Release Management",
+          duration: 18,
+          type: "lesson",
+          description: "Promote artifacts across environments, manage release branches, and implement deployment strategies.",
+          objectives: [
+            "Implement promotion pipelines that deploy the same artifact across environments",
+            "Manage release branches and hotfix workflows",
+            "Use blue/green and canary deployment strategies",
+            "Implement rollback procedures for production incidents",
+          ],
+          content: `# Artifact Promotion & Release Management
+
+## The Promotion Model
+
+\`\`\`
+┌──────────────────────────────────────────────────────┐
+│               Promotion Pipeline                     │
+│                                                      │
+│  Build → DEV ──(auto)──> STAGING ──(auto)──>         │
+│  PROD (manual approval + change window)              │
+│                                                      │
+│  Image: myapp:v1.2.3 flows unchanged                 │
+│  Config: values-dev.yaml / values-staging.yaml /    │
+│          values-prod.yaml (different per env)        │
+└──────────────────────────────────────────────────────┘
+\`\`\`
+
+## GitLab Promotion Pipeline
+
+\`\`\`yaml
+set-version:
+  stage: .pre
+  script:
+    - echo "APP_VERSION=$(cat VERSION)" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env  # shares APP_VERSION to downstream jobs
+
+deploy-dev:
+  stage: deploy-dev
+  script:
+    - helm upgrade --install myapp ./charts/myapp
+        --set image.tag=\$APP_VERSION
+        --namespace dev
+        --values helm/values-dev.yaml
+  environment:
+    name: dev
+
+deploy-staging:
+  stage: deploy-staging
+  needs:
+    - job: deploy-dev
+      artifacts: true
+  script:
+    - helm upgrade --install myapp ./charts/myapp
+        --set image.tag=\$APP_VERSION   # SAME tag as dev
+        --namespace staging
+        --values helm/values-staging.yaml
+
+deploy-prod:
+  stage: deploy-prod
+  needs:
+    - job: deploy-staging
+      artifacts: true
+  script:
+    - helm upgrade --install myapp ./charts/myapp
+        --set image.tag=\$APP_VERSION   # SAME tag as staging
+        --namespace production
+        --values helm/values-prod.yaml
+  when: manual
+\`\`\`
+
+## Release Branch Strategy
+
+\`\`\`
+main ──────────────────────────────── (always deployable)
+        │              │
+        │              └── release/1.3.0 ── hotfix/1.3.1
+        └── feature/payment-retry
+\`\`\`
+
+\`\`\`bash
+# Create release branch from main
+git checkout -b release/1.3.0 main
+git push origin release/1.3.0
+
+# Only cherry-pick bug fixes into release branch
+git cherry-pick abc1234  # specific fix from main
+
+# Tag the release
+git tag -a v1.3.0 -m "Release 1.3.0"
+git push origin v1.3.0
+
+# Merge release branch back to main
+git checkout main && git merge release/1.3.0
+\`\`\`
+
+## Hotfix Workflow
+
+\`\`\`bash
+# Production is on v1.3.0, critical bug found
+# Branch from the tag (NOT from main which has 20 unreleased commits)
+git checkout -b hotfix/1.3.1 v1.3.0
+
+git commit -m "fix: payment gateway timeout on retry"
+git tag -a v1.3.1 -m "Hotfix: payment gateway timeout"
+git push origin v1.3.1 --tags
+
+# Cherry-pick fix back to main
+git checkout main
+git cherry-pick <hotfix-sha>
+\`\`\`
+
+## Deployment Strategies
+
+### Blue/Green: Zero-Downtime Cutover
+
+\`\`\`bash
+# Blue is live. Deploy green (new version) in parallel.
+kubectl apply -f k8s/deployment-green.yaml
+kubectl rollout status deployment/myapp-green
+
+# Smoke test green before switching
+./smoke-tests.sh https://green.internal.myapp.com
+
+# Switch service selector from blue to green (instant)
+kubectl patch service myapp \
+  --patch '{"spec":{"selector":{"slot":"green"}}}'
+
+# Keep blue running 15 min for instant rollback if needed
+\`\`\`
+
+### Canary: Gradual Traffic Shift
+
+\`\`\`yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+spec:
+  strategy:
+    canary:
+      steps:
+      - setWeight: 5      # 5% to canary, watch metrics 10m
+      - pause: {duration: 10m}
+      - setWeight: 20
+      - pause: {duration: 10m}
+      - setWeight: 50
+      - pause: {}         # manual gate before 100%
+      - setWeight: 100
+\`\`\`
+`,
+          interviewQuestions: [
+            {
+              question: "How do you manage a hotfix when main has moved ahead of production?",
+              difficulty: "senior" as const,
+              answer: `Production is on v1.3.0 but main has 20 commits not yet ready for production. You can't deploy from main.
+
+**Hotfix workflow:**
+\`\`\`bash
+# 1. Branch from the production tag (not main)
+git checkout -b hotfix/payment-timeout v1.3.0
+
+# 2. Apply the fix
+git commit -m "fix: increase payment gateway timeout to 30s"
+
+# 3. Tag and push
+git tag -a v1.3.1 -m "Hotfix 1.3.1"
+git push origin v1.3.1
+
+# 4. CI triggers on tag: runs tests, deploys to production
+
+# 5. Cherry-pick back to main (don't merge — would bring v1.3.0 state)
+git checkout main
+git cherry-pick <hotfix-sha>
+\`\`\`
+
+**Why cherry-pick not merge**: Merging the hotfix branch back includes the entire v1.3.0 state, which could revert main's 20 new commits. Cherry-pick applies only the specific fix.
+
+**Pipeline consideration**: Hotfix pipelines should skip full E2E suites (testing features not in the hotfix) but still run unit tests + smoke tests.`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "monitoring-observability",
+      title: "Monitoring & Observability",
+      level: "intermediate",
+      description: "Build comprehensive observability with Prometheus, Grafana, and OpenSearch.",
+      lessons: [
+        {
+          id: "prometheus-fundamentals",
+          title: "Prometheus — Metrics & Alerting",
+          duration: 25,
+          type: "lesson",
+          description: "Collect, store, and query metrics with Prometheus and AlertManager.",
+          objectives: [
+            "Understand Prometheus's pull-based architecture and metric types",
+            "Write PromQL queries for application and infrastructure metrics",
+            "Configure AlertManager for on-call routing",
+            "Expose custom application metrics",
+          ],
+          content: `# Prometheus — Metrics & Alerting
+
+## Why Prometheus?
+
+Prometheus is the de facto standard for Kubernetes monitoring. Created at SoundCloud, now used by Uber, DigitalOcean, and thousands of companies.
+
+**Key design:**
+- **Pull model**: Prometheus scrapes \`/metrics\` endpoints on a schedule. No agents to install — targets just expose an HTTP endpoint.
+- **Time series database**: Stores \`metric_name{labels} value timestamp\`
+- **PromQL**: Powerful query language for rates, aggregations, and percentiles
+- **AlertManager**: Handles alert routing, deduplication, and silencing
+
+## Architecture
+
+\`\`\`
+Prometheus (scrapes every 15s)
+    │
+    ├── /metrics on app pods  (custom app metrics)
+    ├── node-exporter          (CPU, memory, disk)
+    ├── kube-state-metrics     (pod counts, deployment status)
+    └── postgres-exporter      (DB metrics)
+    │
+    ├── TSDB (local storage, 30d retention)
+    ├── Grafana (dashboards)
+    └── AlertManager (PagerDuty, Slack)
+\`\`\`
+
+## Metric Types
+
+\`\`\`
+Counter:   only goes up (total requests, total errors)
+           http_requests_total{method="GET",status="200"} 42398
+           → use rate() to get per-second rate
+
+Gauge:     goes up or down (memory, active connections, queue depth)
+           node_memory_MemAvailable_bytes 4294967296
+           → use directly
+
+Histogram: samples latency distribution, enables percentile queries
+           http_request_duration_seconds_bucket{le="0.1"} 240
+           → use histogram_quantile()
+\`\`\`
+
+## Exposing Metrics in Your App
+
+\`\`\`python
+from prometheus_client import Counter, Histogram, generate_latest
+import time
+
+REQUEST_COUNT = Counter('http_requests_total', 'Total requests',
+                        ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'Latency',
+                            ['endpoint'])
+
+@app.route('/api/payments', methods=['POST'])
+def process_payment():
+    start = time.time()
+    try:
+        result = payment_service.process(request.json)
+        REQUEST_COUNT.labels('POST', '/api/payments', '200').inc()
+        return jsonify(result)
+    except Exception:
+        REQUEST_COUNT.labels('POST', '/api/payments', '500').inc()
+        raise
+    finally:
+        REQUEST_LATENCY.labels('/api/payments').observe(time.time() - start)
+
+@app.route('/metrics')
+def metrics():
+    return generate_latest()
+\`\`\`
+
+\`\`\`yaml
+# Tell Prometheus to scrape your pod
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+\`\`\`
+
+## Essential PromQL Queries
+
+\`\`\`promql
+# Error rate (errors per second)
+rate(http_requests_total{status=~"5.."}[5m])
+
+# Error ratio (% of requests failing)
+sum(rate(http_requests_total{status=~"5.."}[5m]))
+/ sum(rate(http_requests_total[5m]))
+
+# 95th percentile latency by endpoint
+histogram_quantile(0.95,
+  sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)
+)
+
+# CPU usage rate by pod
+rate(container_cpu_usage_seconds_total{namespace="production"}[5m])
+
+# Memory usage vs limit (saturation)
+container_memory_working_set_bytes
+/ container_spec_memory_limit_bytes
+
+# Node disk > 85% full
+(node_filesystem_size_bytes - node_filesystem_avail_bytes)
+/ node_filesystem_size_bytes > 0.85
+
+# Pods not running
+kube_pod_status_phase{phase!="Running"} > 0
+\`\`\`
+
+## AlertManager Configuration
+
+\`\`\`yaml
+# prometheus/alerts.yml
+groups:
+- name: application
+  rules:
+  - alert: HighErrorRate
+    expr: |
+      sum(rate(http_requests_total{status=~"5.."}[5m]))
+      / sum(rate(http_requests_total[5m])) > 0.05
+    for: 5m
+    labels:
+      severity: critical
+      team: backend
+    annotations:
+      summary: "Error rate {{ \$value | humanizePercentage }}"
+      runbook: "https://wiki.mycompany.com/runbooks/high-error-rate"
+
+  - alert: HighLatency
+    expr: |
+      histogram_quantile(0.95,
+        sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+      ) > 2
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "P95 latency {{ \$value }}s exceeds SLO"
+\`\`\`
+
+\`\`\`yaml
+# alertmanager/config.yml
+route:
+  group_by: ['alertname', 'team']
+  receiver: default
+  routes:
+  - match:
+      severity: critical
+      team: backend
+    receiver: pagerduty-backend
+  - match:
+      severity: warning
+    receiver: slack-warnings
+
+receivers:
+- name: pagerduty-backend
+  pagerduty_configs:
+  - routing_key: <KEY>
+- name: slack-warnings
+  slack_configs:
+  - api_url: https://hooks.slack.com/services/...
+    channel: '#alerts'
+\`\`\`
+`,
+          interviewQuestions: [
+            {
+              question: "Explain the four golden signals and how you'd alert on them.",
+              difficulty: "mid" as const,
+              answer: `From the Google SRE book — the four most critical metrics for any service:
+
+**1. Latency** — How long does a request take?
+\`\`\`promql
+# P99 latency > 500ms for 5 minutes → alert
+histogram_quantile(0.99,
+  sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+) > 0.5
+\`\`\`
+
+**2. Traffic** — How much demand hits the system?
+\`\`\`promql
+sum(rate(http_requests_total[5m])) by (service)
+\`\`\`
+Baseline matters: 100 RPS might be normal or a 10x spike.
+
+**3. Errors** — What rate of requests fail?
+\`\`\`promql
+sum(rate(http_requests_total{status=~"5.."}[5m]))
+/ sum(rate(http_requests_total[5m])) > 0.01
+\`\`\`
+
+**4. Saturation** — How full is the service?
+\`\`\`promql
+container_memory_working_set_bytes
+/ container_spec_memory_limit_bytes > 0.85
+\`\`\`
+
+**Alert severity:**
+- Error rate > 0.1% → warning (Slack)
+- Error rate > 1% → critical (page on-call)
+- P99 latency > 500ms → warning
+- P99 latency > 2s → critical (SLO breach)`,
+            },
+            {
+              question: "What's the difference between a counter and a gauge?",
+              difficulty: "junior" as const,
+              answer: `**Counter**: Only goes up (resets to 0 on restart). Use for things you count: total requests, total errors, total bytes sent.
+\`\`\`promql
+# Wrong — raw value is useless (just grows forever)
+http_requests_total
+
+# Right — rate() gives per-second rate over 5 minutes
+rate(http_requests_total[5m])
+\`\`\`
+
+**Gauge**: Can go up or down. Use for current state: memory usage, active connections, queue depth, CPU temperature.
+\`\`\`promql
+# Gauge — use directly (no rate needed)
+node_memory_MemAvailable_bytes
+redis_connected_clients
+\`\`\`
+
+**Common mistake**: Using a gauge for request counts (resetting each interval). If a scrape is missed, data is lost. Counters are resilient — you calculate rate from the cumulative total.
+
+**Histogram**: Tracks distribution of values (latencies). Required for percentile calculations. Always prefer histogram over average for latency — averages hide tail behavior.`,
+            },
+          ],
+        },
+        {
+          id: "grafana-dashboards",
+          title: "Grafana — Dashboards & Visualization",
+          duration: 20,
+          type: "lesson",
+          description: "Build production dashboards, SLO tracking, and Grafana as code.",
+          objectives: [
+            "Connect Grafana to Prometheus and other data sources",
+            "Build dashboards with panels, variables, and alerts",
+            "Implement Grafana as code with provisioning",
+            "Create SLO dashboards with error budget tracking",
+          ],
+          content: `# Grafana — Dashboards & Visualization
+
+## What is Grafana?
+
+Grafana is the visualization layer for your metrics. It connects to Prometheus, Loki, OpenSearch, CloudWatch, and 50+ other sources. Used by Bloomberg, PayPal, and thousands of engineering teams.
+
+## Deploying the Full Stack
+
+\`\`\`bash
+# kube-prometheus-stack: Prometheus + Grafana + AlertManager + pre-built K8s dashboards
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  -f monitoring-values.yaml
+\`\`\`
+
+\`\`\`yaml
+# monitoring-values.yaml
+grafana:
+  adminPassword: "\${GRAFANA_ADMIN_PASSWORD}"
+  persistence:
+    enabled: true
+    size: 10Gi
+  ingress:
+    enabled: true
+    hosts: [grafana.mycompany.com]
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: default
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+prometheus:
+  prometheusSpec:
+    retention: 30d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 100Gi
+\`\`\`
+
+## Grafana as Code
+
+Never click to create dashboards — version control them as JSON.
+
+\`\`\`bash
+# Export an existing dashboard
+curl -s http://admin:password@grafana:3000/api/dashboards/uid/my-dash \
+  | jq '.dashboard' > dashboards/app-overview.json
+\`\`\`
+
+\`\`\`yaml
+# Mount dashboards via ConfigMap (Grafana sidecar picks them up)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  labels:
+    grafana_dashboard: "1"
+data:
+  app-overview.json: |
+    { "title": "Application Overview", "panels": [...] }
+\`\`\`
+
+## Key Dashboard Layout
+
+\`\`\`
+┌────────────────────────────────────────────────────┐
+│           Application Overview                     │
+├──────────┬──────────┬──────────┬───────────────────┤
+│ RPS      │ P95 Lat  │ Error %  │ Availability      │
+│ 1,234/s  │ 142ms    │ 0.02%    │ 99.98%            │
+├──────────┴──────────┴──────────┴───────────────────┤
+│ Request Rate (time series — last 24h)              │
+├──────────────────────────┬─────────────────────────┤
+│ Latency Heatmap          │ Error Breakdown by Code  │
+│  (shows P50/P95/P99)     │  500: 12  502: 3  504: 1 │
+└──────────────────────────┴─────────────────────────┘
+\`\`\`
+
+## SLO Dashboard with Error Budget
+
+\`\`\`
+SLO: 99.9% availability over 30 days
+Error budget: 0.1% of requests allowed to fail
+= ~43.8 minutes of downtime per month allowed
+\`\`\`
+
+\`\`\`promql
+# Error budget remaining (as % of budget)
+(
+  1 - (
+    sum(increase(http_requests_total{status=~"5.."}[30d]))
+    / sum(increase(http_requests_total[30d]))
+  ) / 0.001   -- divide by 0.1% budget
+) * 100
+
+# Burn rate (how fast are we consuming the budget?)
+# > 1.0 = consuming faster than 30-day budget allows
+sum(rate(http_requests_total{status=~"5.."}[1h]))
+/ sum(rate(http_requests_total[1h]))
+/ (0.001 / (30 * 24))
+\`\`\`
+
+**Dashboard thresholds:**
+- Budget > 50%: green (healthy)
+- Budget 25-50%: yellow (caution — slow down feature work)
+- Budget < 25%: red (freeze features, focus on reliability)
+
+**Burn rate alerts (Google SRE Workbook):**
+- Burn rate > 14.4x for 1h → page immediately (budget exhausted in 2 days)
+- Burn rate > 6x for 6h → page soon (exhausted in 5 days)
+- Burn rate > 3x for 3 days → ticket (trending bad, investigate)
+`,
+          interviewQuestions: [
+            {
+              question: "How do you implement an SLO and error budget in practice?",
+              difficulty: "senior" as const,
+              answer: `**Step 1: Define the SLO**
+\`\`\`
+SLO: 99.9% of HTTP requests return non-5xx status over a rolling 30-day window
+Error budget: 0.1% = 43.8 minutes equivalent of 100% error rate
+\`\`\`
+
+**Step 2: Implement the measurement** (PromQL in Grafana)
+\`\`\`promql
+# Current availability
+(
+  sum(increase(http_requests_total{status!~"5.."}[30d]))
+  / sum(increase(http_requests_total[30d]))
+) * 100
+
+# Budget remaining
+( 1 - actual_error_rate / 0.001 ) * 100
+\`\`\`
+
+**Step 3: Alert on burn rate, not just threshold**
+Alerting when budget drops below 50% is too late — you need to know burn rate:
+\`\`\`promql
+# 1-hour burn rate > 14.4 means budget exhausts in 2 days
+sum(rate(http_requests_total{status=~"5.."}[1h]))
+/ sum(rate(http_requests_total[1h]))
+/ 0.001 > 14.4
+\`\`\`
+
+**Step 4: Use budget for decision making**
+- Budget > 50%: proceed with feature releases
+- Budget 25-50%: engineering manager aware, reduce release cadence
+- Budget < 25%: freeze non-critical features, reliability work only
+- Budget exhausted: all hands on reliability, no features until next month
+
+**Step 5: Review in weekly reliability meeting**
+Look at burn rate trend, planned releases, and adjust accordingly. This is how Google, Spotify, and most mature SRE teams operate.`,
+            },
+          ],
+        },
+        {
+          id: "opensearch-logging",
+          title: "OpenSearch & Centralized Logging",
+          duration: 22,
+          type: "lesson",
+          description: "Aggregate, search, and analyze logs at scale with OpenSearch and Fluent Bit.",
+          objectives: [
+            "Understand the OpenSearch/ELK stack architecture",
+            "Deploy Fluent Bit for Kubernetes log collection",
+            "Write OpenSearch queries for log analysis",
+            "Implement log-based alerting and index lifecycle management",
+          ],
+          content: `# OpenSearch & Centralized Logging
+
+## Why Centralized Logging?
+
+In a Kubernetes cluster with 100 pods across 10 nodes, logs are scattered everywhere. When a user reports a bug at 14:32:15, you need to correlate logs across frontend → API → database → queue processor in different pods that may have already restarted.
+
+**Without centralized logging**: SSH to each node, grep through files, logs lost on pod restart.
+
+**With OpenSearch**: All logs searchable from one UI, preserved after pod deletion, full-text search, log-based alerts, anomaly detection.
+
+## Architecture: Fluent Bit → OpenSearch → Dashboards
+
+\`\`\`
+┌─────────────────────────────────────────────┐
+│              Kubernetes Nodes               │
+│                                             │
+│  Containers → /var/log/containers/*.log     │
+│                    ↓                        │
+│  ┌─────────────────────────────────────┐    │
+│  │  Fluent Bit (DaemonSet — one/node)  │    │
+│  │  • parses container logs            │    │
+│  │  • adds K8s metadata (pod/ns/label) │    │
+│  │  • forwards to OpenSearch           │    │
+│  └─────────────────────────────────────┘    │
+└─────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────┐
+│           OpenSearch Cluster                │
+│  Data Nodes (storage) + Dashboards (UI)    │
+└─────────────────────────────────────────────┘
+\`\`\`
+
+## Deploying Fluent Bit
+
+\`\`\`bash
+helm repo add fluent https://fluent.github.io/helm-charts
+helm upgrade --install fluent-bit fluent/fluent-bit \
+  --namespace logging \
+  -f fluent-bit-values.yaml
+\`\`\`
+
+\`\`\`yaml
+# fluent-bit-values.yaml
+config:
+  inputs: |
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        multiline.parser  docker, cri
+        Tag               kube.*
+        Mem_Buf_Limit     50MB
+
+  filters: |
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Merge_Log           On       # parse JSON logs into fields
+        K8S-Logging.Parser  On
+        Annotations         Off
+
+  outputs: |
+    [OUTPUT]
+        Name            opensearch
+        Match           kube.*
+        Host            opensearch.logging.svc.cluster.local
+        Port            9200
+        Index           kubernetes-logs
+        Logstash_Format On
+        Logstash_Prefix kubernetes-logs
+        Retry_Limit     5
+\`\`\`
+
+## Structured Logging Best Practice
+
+\`\`\`python
+# Bad: unstructured — only full-text searchable
+print(f"Payment failed for user {user_id}")
+
+# Good: structured JSON — every field is indexed and queryable
+import structlog
+
+log = structlog.get_logger()
+log.error("payment_failed",
+    user_id=user_id,
+    amount=amount,
+    currency="USD",
+    error_code="GATEWAY_TIMEOUT",
+    trace_id=request.headers.get("X-Trace-ID"),
+    duration_ms=elapsed_ms,
+)
+# In OpenSearch: filter on error_code="GATEWAY_TIMEOUT" in < 1 second
+# With unstructured logs: grep through gigabytes of text
+\`\`\`
+
+## OpenSearch Queries
+
+\`\`\`json
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "term": { "kubernetes.labels.app": "payments-api" }},
+        { "term": { "error_code": "GATEWAY_TIMEOUT" }},
+        { "range": { "@timestamp": { "gte": "now-1h" }}}
+      ]
+    }
+  },
+  "sort": [{ "@timestamp": "desc" }]
+}
+\`\`\`
+
+\`\`\`json
+{
+  "aggs": {
+    "errors_by_code": {
+      "terms": { "field": "error_code.keyword", "size": 10 }
+    },
+    "errors_over_time": {
+      "date_histogram": {
+        "field": "@timestamp",
+        "calendar_interval": "5m"
+      }
+    }
+  }
+}
+\`\`\`
+
+## Index Lifecycle Management
+
+\`\`\`json
+{
+  "policy": {
+    "states": [
+      {
+        "name": "hot",
+        "actions": [{ "rollover": { "min_size": "10gb", "min_index_age": "1d" }}],
+        "transitions": [{ "state_name": "warm", "conditions": { "min_index_age": "7d" }}]
+      },
+      {
+        "name": "warm",
+        "actions": [{ "force_merge": { "max_num_segments": 1 }}],
+        "transitions": [{ "state_name": "delete", "conditions": { "min_index_age": "30d" }}]
+      },
+      {
+        "name": "delete",
+        "actions": [{ "delete": {} }]
+      }
+    ]
+  }
+}
+\`\`\`
+`,
+          interviewQuestions: [
+            {
+              question: "What's the difference between metrics and logs, and when do you use each?",
+              difficulty: "junior" as const,
+              answer: `**Metrics** (Prometheus/Grafana): Numeric measurements over time.
+- Low storage cost (just numbers + timestamps)
+- Great for: dashboards, alerting, SLOs, trends
+- Bad for: understanding WHY something went wrong
+- Examples: request count, P99 latency, CPU %, error rate
+
+**Logs** (OpenSearch/Loki): Timestamped text/JSON records of events.
+- Higher storage cost (full text)
+- Great for: debugging specific incidents, audit trails, root cause analysis
+- Bad for: aggregation and alerting at scale (expensive)
+- Examples: "Payment failed for user 12345, error: gateway timeout, trace: abc123"
+
+**Traces** (Jaeger/Tempo/X-Ray): Record of a request's journey through multiple services.
+- Shows exactly where time was spent across service hops
+- Great for: latency debugging in microservices
+- Examples: request → API (5ms) → database (200ms ← bottleneck) → cache (1ms)
+
+**The practical workflow**: Metrics alert fires (WHAT is wrong) → check logs for context (WHY it happened) → if latency issue, check traces (WHERE the bottleneck is). They complement each other — you need all three for full observability.`,
+            },
+            {
+              question: "How would you debug a production incident using centralized logging?",
+              difficulty: "mid" as const,
+              answer: `**Scenario**: Payment service error rate spiked at 14:32, already resolved at 14:55.
+
+**Step 1: Find the error window**
+\`\`\`
+OpenSearch → Discover
+Index: kubernetes-logs-*
+Time: 14:25 → 15:00
+Filter: kubernetes.labels.app = payments-api
+Filter: level = error
+\`\`\`
+
+**Step 2: Identify the pattern**
+Sort by timestamp, look for the first error. Common patterns:
+- All errors have same message → single root cause
+- Errors distributed across different messages → multiple causes
+
+**Step 3: Use aggregations**
+\`\`\`json
+{
+  "aggs": {
+    "by_error": {
+      "terms": { "field": "error_message.keyword" }
+    }
+  }
+}
+\`\`\`
+Result: 97% of errors are "connection refused: postgres:5432" → database issue.
+
+**Step 4: Correlate with infrastructure metrics**
+Switch to Grafana: check postgres metrics at 14:32.
+Result: postgres CPU at 100%, connection pool exhausted.
+
+**Step 5: Find the trigger**
+Check deployment events in logs:
+\`\`\`
+Filter: event = deployment, time: 14:25-14:35
+Result: v2.1.3 deployed at 14:32 (with 3 extra DB queries per request)
+\`\`\`
+
+**Outcome**: Trace from alert → logs → metrics → deployment event in under 10 minutes. Without centralized logging this would take hours of SSH + grep.`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "devops-release-engineering",
+      title: "Release Engineering & Feature Flags",
+      level: "advanced",
+      description: "Implement advanced release patterns, feature flags, DORA metrics, and DevOps culture.",
+      lessons: [
+        {
+          id: "feature-flags",
+          title: "Feature Flags & Progressive Delivery",
+          duration: 16,
+          type: "lesson",
+          description: "Decouple deployment from release using feature flags and progressive rollouts.",
+          objectives: [
+            "Understand the deployment vs release distinction",
+            "Implement feature flags for progressive rollouts",
+            "Use kill switches for instant rollback without redeployment",
+            "Apply percentage-based canary releases via flags",
+          ],
+          content: `# Feature Flags & Progressive Delivery
+
+## Deployment ≠ Release
+
+**Deployment**: The code is running in production.
+**Release**: The feature is visible to users.
+
+Feature flags decouple these. You can deploy to production at any time but only release to specific users, groups, or percentages.
+
+\`\`\`
+Traditional:
+  Code → CI → Production → Everyone sees it (risky, hard to roll back)
+
+With feature flags:
+  Code → CI → Production (dark launch, no users see it) →
+  1% of users → 10% → 50% → 100% (gradual rollout with monitoring)
+  OR: instant rollback by flipping the flag to 0%
+\`\`\`
+
+**Companies:** Facebook deploys to 2 billion users behind feature flags. GitHub deploys to 100% of employees first, then gradually to users. Netflix uses flags as kill switches for every major feature.
+
+## Implementing Feature Flags
+
+\`\`\`python
+# Using OpenFeature (vendor-neutral SDK — works with LaunchDarkly, flagd, Unleash)
+from openfeature import api
+from openfeature.provider.flagd import FlagdProvider
+
+api.set_provider(FlagdProvider(host="flagd", port=8013))
+client = api.get_client()
+
+@app.route('/api/checkout', methods=['POST'])
+def checkout():
+    use_new_flow = client.get_boolean_value(
+        flag_key="new-checkout-flow",
+        default_value=False,
+        evaluation_context={"user_id": current_user.id}
+    )
+    if use_new_flow:
+        return new_checkout_service.process(request.json)
+    return legacy_checkout_service.process(request.json)
+\`\`\`
+
+\`\`\`yaml
+# flagd flag definition — percentage rollout
+flags:
+  new-checkout-flow:
+    state: ENABLED
+    variants:
+      "on": true
+      "off": false
+    defaultVariant: "off"
+    targeting:
+      if:
+        - fractional:
+            - "\$ud#user_id"    # stable: same user always gets same variant
+            - ["on", 10]        # 10% of users
+            - ["off", 90]       # 90% remain on old flow
+\`\`\`
+
+## Kill Switch Pattern
+
+\`\`\`python
+payment_v2_enabled = flags.get_boolean("payment-v2", default=False)
+
+if payment_v2_enabled:
+    result = payment_v2.process(order)
+else:
+    result = payment_v1.process(order)   # battle-tested fallback
+
+# If payment_v2 starts failing in production:
+# → Open flagd/LaunchDarkly → set payment-v2 = false
+# → ALL traffic instantly returns to payment_v1
+# → No deployment, no rollback pipeline, < 1 second
+\`\`\`
+
+**Compare to traditional rollback:**
+- Feature flag rollback: < 1 second, anyone can do it, no pipeline risk
+- Deployment rollback: 15-30 minutes, pipeline must succeed, risk of further issues
+
+## Gradual Rollout with Monitoring
+
+\`\`\`bash
+# Week 1: 1% rollout
+flagd: new-checkout-flow → ["on", 1]
+# Monitor: error rate, conversion rate, latency
+
+# Week 2: 10% (if metrics are healthy)
+flagd: new-checkout-flow → ["on", 10]
+# Monitor for 2 days
+
+# Week 3: 50%
+# Week 4: 100%
+# Week 5: Remove the flag (cleanup!)
+\`\`\`
+
+Flag cleanup is important — too many flags make code unreadable. Schedule removal as part of the feature work (usually 2-4 weeks after 100% rollout).
+`,
+          interviewQuestions: [
+            {
+              question: "How do you roll back a feature at 100% without a code deployment?",
+              difficulty: "mid" as const,
+              answer: `With feature flags: instant rollback without redeployment.
+
+**With feature flags:**
+1. Open your flag management system (LaunchDarkly, flagd, Unleash)
+2. Find the \`new-feature\` flag
+3. Set percentage: 100% → 0%
+4. Live within seconds (next flag evaluation in each SDK instance)
+5. Zero deployment, zero downtime, zero pipeline risk
+
+**Traditional rollback (without flags):**
+1. Create revert commit
+2. CI pipeline runs (5-15 minutes)
+3. Deploy to production (rolling update, another 5-10 minutes)
+4. Total: 15-30 minutes of continued customer impact
+
+**Why flags win for rollback:**
+- Instant (sub-second propagation to all instances)
+- No pipeline that can fail
+- Partial rollback possible (100% → 50% → 0%)
+- Ops/support team can do it, not just engineers
+- Can target specific users (roll back for affected customers only)
+
+**Best practice**: Every major feature gets a flag at launch. The flag is removed (code cleaned up) 2-4 weeks after stable 100% rollout. Flag debt (too many old flags) makes code hard to reason about.`,
+            },
+          ],
+        },
+        {
+          id: "dora-metrics",
+          title: "DORA Metrics & DevOps Culture",
+          duration: 15,
+          type: "lesson",
+          description: "Measure DevOps performance with DORA metrics and build high-performing team practices.",
+          objectives: [
+            "Understand and measure the four DORA metrics",
+            "Identify elite vs low-performing DevOps teams",
+            "Implement practices that improve deployment frequency and MTTR",
+            "Build blameless postmortem culture",
+          ],
+          content: `# DORA Metrics & DevOps Culture
+
+## The Four DORA Metrics
+
+DORA (DevOps Research and Assessment) identified four metrics that predict software delivery performance across 33,000+ professionals.
+
+\`\`\`
+         SPEED                    STABILITY
+┌────────────────────┐  ┌───────────────────────┐
+│ Deployment         │  │ Change Failure Rate    │
+│ Frequency          │  │ % of deploys causing   │
+│ How often to prod? │  │ incidents              │
+└────────────────────┘  └───────────────────────┘
+┌────────────────────┐  ┌───────────────────────┐
+│ Lead Time          │  │ MTTR                  │
+│ Commit → Production│  │ Mean Time to Recovery  │
+│ how long?          │  │ How fast you recover   │
+└────────────────────┘  └───────────────────────┘
+\`\`\`
+
+## Performance Tiers
+
+| Metric | Elite | High | Medium | Low |
+|--------|-------|------|--------|-----|
+| Deploy Frequency | Multiple/day | Daily-weekly | Weekly-monthly | Monthly+ |
+| Lead Time | < 1 hour | 1 day - 1 week | 1-4 weeks | > 1 month |
+| Change Failure Rate | 0-5% | 5-10% | 10-15% | > 15% |
+| MTTR | < 1 hour | < 1 day | < 1 week | > 1 week |
+
+**Elite performers** (Amazon, Netflix, Google) deploy multiple times per day with < 5% change failure rate and recover from incidents in under an hour. **Low performers** deploy monthly and take weeks to recover.
+
+## Improving Each Metric
+
+**Deployment Frequency:**
+- Smaller PRs (< 200 lines → easier to review → faster to merge)
+- Trunk-based development (no long-lived feature branches)
+- Feature flags (deploy dark, release separately)
+- Automate CI/CD (remove manual steps)
+
+**Lead Time:**
+- Faster CI pipelines (parallelize, cache)
+- Reduce PR review time (pair programming, async review culture)
+- Remove manual QA gates (replace with automated tests)
+
+**Change Failure Rate:**
+- Higher test coverage + integration tests
+- Progressive delivery (canary → gradual rollout)
+- Feature flags (instant rollback if failure rate spikes)
+- SAST/SCA/container scanning in CI
+
+**MTTR:**
+- Alerting + monitoring (detect faster)
+- Runbooks for every alert
+- Feature flags (roll back in seconds)
+- Chaos engineering (practice recovery before incidents)
+
+## Blameless Postmortem Template
+
+\`\`\`markdown
+# Postmortem — 2024-01-15 Payment Outage (23 min, 12k users affected)
+
+## Timeline
+14:32 - v2.1.3 deployed to production
+14:35 - AlertManager: error rate > 5%
+14:36 - On-call paged via PagerDuty
+14:42 - Root cause: DB connection pool exhausted
+14:55 - Rolled back to v2.1.2, service restored
+
+## Root Cause
+New feature added 3 additional DB queries per request.
+Connection pool size (50) was insufficient at peak traffic.
+Load testing covered only 50% of peak traffic.
+
+## Contributing Factors (5 Whys)
+Why did the pool exhaust? → new queries per request
+Why wasn't it caught? → load test was understaffed
+Why was load test understaffed? → no requirement for 110% peak
+Why no requirement? → no postmortem from previous similar incident
+
+## Action Items
+- [ ] Alert on pool utilization > 80% (team-infra, 2024-01-19)
+- [ ] Require load tests at 110% peak in staging (team-platform, 2024-01-31)
+- [ ] Runbook: DB connection exhaustion (team-backend, 2024-01-19)
+
+## What Went Well
+- Detection: 3 minutes after deploy
+- Rollback: 13 minutes (under 15-min SLO)
+- Communication: clear escalation path
+\`\`\`
+
+**Key principle**: The system failed, not the person. Ask "Why did the system allow this?" not "Who broke this?" Psychological safety enables honest postmortems which enable real improvement.
+`,
+          interviewQuestions: [
+            {
+              question: "Your team deploys once a month and takes 3 days to recover from incidents. How do you improve?",
+              difficulty: "senior" as const,
+              answer: `This is a "low performer" DORA profile. Practical improvement roadmap:
+
+**Phase 1: Reduce fear of deploying (Month 1-2)**
+Root cause of monthly deploys: usually manual QA gates, no automated tests, "big bang" releases.
+
+- Break PRs smaller — one feature at a time, < 200 lines
+- Build basic CI: lint + unit tests on every PR
+- Deploy to staging automatically on every merge to main
+- Target: staging deploys daily within 60 days
+
+**Phase 2: Automate production deployment (Month 2-3)**
+- Wrap manual deployment scripts in CI/CD
+- Add smoke tests (3-5 critical flows) after every deploy
+- Implement feature flags — deploy dark, no risk
+- Target: weekly prod deploys, confidence increasing
+
+**Phase 3: Reduce MTTR in parallel**
+Current 3-day MTTR means: slow detection (no monitoring) + slow rollback + slow incident process.
+
+- Add Prometheus + Grafana — detect via alert, not user complaints
+- Write runbooks for top 5 alerts
+- Practice rollback drill until it takes < 5 minutes
+- Target: detect in < 5 min, recover in < 30 min
+
+**Phase 4: Daily → multiple deploys**
+- Canary deployments (automatic rollback on error spike)
+- Remove remaining manual gates
+- Make deployment boring — not a big event
+
+**Measure and celebrate progress**: Publish DORA metrics on a team dashboard. Celebrate deployment frequency increasing. When deployment is safe and boring, you can deploy many times a day.`,
+            },
+          ],
+        },
+      ],
+    },
   ],
 };
