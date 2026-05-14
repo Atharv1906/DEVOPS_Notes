@@ -120,6 +120,37 @@ chmod +x hello.py
 ./hello.py
 \`\`\`
 `,
+          interviewQuestions: [
+            {
+              question: "Why is Python popular for DevOps and automation? What are its strengths and weaknesses?",
+              difficulty: "junior" as const,
+              answer: `**Python's strengths for DevOps:**
+
+1. **Readable syntax** — scripts are maintainable by teammates who aren't Python experts
+2. **Rich standard library** — \`os\`, \`subprocess\`, \`json\`, \`pathlib\`, \`http\` cover most automation needs without extra dependencies
+3. **Excellent library ecosystem:**
+   - \`boto3\` for AWS automation
+   - \`kubernetes\` for K8s management
+   - \`requests\` for HTTP APIs
+   - \`paramiko\` for SSH automation
+   - \`ansible\` (written in Python) for config management
+4. **Shell replacement** — Python subprocess handles shell commands better than complex Bash (error handling, data parsing)
+5. **Cross-platform** — works on Linux, macOS, Windows (unlike Bash)
+6. **AI/ML integration** — same language for DevOps automation and ML pipeline management
+
+**Weaknesses:**
+- **Slower than Go/Rust** for performance-critical tools (kubectl, Terraform are Go — startup is ~100ms vs Python's 100-500ms)
+- **Dependency management** can be complex (virtualenvs, pip conflicts)
+- **Not as natural for interactive one-liners** as Bash
+- **GIL (Global Interpreter Lock)** limits true thread-based parallelism for CPU-bound tasks
+
+**When to use Python vs. Bash:**
+- Logic complexity > 20 lines → Python
+- Need to parse JSON/YAML → Python
+- Calling multiple APIs → Python
+- Simple one-time file ops → Bash`,
+            },
+          ],
         },
         {
           id: "variables-types",
@@ -1198,6 +1229,142 @@ class PagerDuty:
 alert(PagerDuty(), "Disk at 95%")  # Works!
 \`\`\`
 `,
+          interviewQuestions: [
+            {
+              question: "Write a Python script that checks disk usage on multiple servers via SSH and sends an alert if any disk is over 85%.",
+              difficulty: "mid" as const,
+              answer: `\`\`\`python
+#!/usr/bin/env python3
+"""Disk usage monitoring script using paramiko for SSH."""
+import paramiko
+import json
+from dataclasses import dataclass
+from typing import Optional
+
+SERVERS = [
+    {"host": "web-01.prod", "user": "deploy"},
+    {"host": "web-02.prod", "user": "deploy"},
+    {"host": "db-01.prod", "user": "deploy"},
+]
+THRESHOLD = 85
+KEY_PATH = "/home/deploy/.ssh/id_rsa"
+
+@dataclass
+class DiskCheck:
+    host: str
+    mount: str
+    usage_pct: int
+    available_gb: float
+
+def check_disk_usage(host: str, user: str) -> list[DiskCheck]:
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    results = []
+    try:
+        client.connect(host, username=user, key_filename=KEY_PATH, timeout=10)
+        _, stdout, _ = client.exec_command(
+            "df -h --output=target,pcent,avail | tail -n +2"
+        )
+        for line in stdout.read().decode().splitlines():
+            mount, pct, avail = line.split()
+            pct_int = int(pct.rstrip("%"))
+            avail_gb = float(avail.rstrip("G") if "G" in avail else "0")
+            results.append(DiskCheck(host, mount, pct_int, avail_gb))
+    except Exception as e:
+        print(f"ERROR connecting to {host}: {e}")
+    finally:
+        client.close()
+    return results
+
+def send_alert(checks: list[DiskCheck]) -> None:
+    # Replace with your actual alerting: PagerDuty, Slack, etc.
+    for check in checks:
+        print(f"ALERT: {check.host}:{check.mount} is {check.usage_pct}% full "
+              f"({check.available_gb}GB available)")
+
+def main() -> None:
+    alerts = []
+    for server in SERVERS:
+        checks = check_disk_usage(server["host"], server["user"])
+        alerts.extend(c for c in checks if c.usage_pct >= THRESHOLD)
+
+    if alerts:
+        send_alert(alerts)
+        print(f"Sent {len(alerts)} alerts")
+    else:
+        print("All disks healthy")
+
+if __name__ == "__main__":
+    main()
+\`\`\`
+
+**Key concepts demonstrated:**
+- Type hints for maintainability
+- \`dataclass\` for structured data
+- Context manager (try/finally) for SSH cleanup
+- Separation of concerns: check vs. alert
+- Error handling per server (one failure doesn't stop others)`,
+            },
+            {
+              question: "Explain Python's GIL and how to work around it for CPU-bound vs I/O-bound tasks.",
+              difficulty: "senior" as const,
+              answer: `**The GIL (Global Interpreter Lock):** A mutex in CPython that ensures only one thread executes Python bytecode at a time, even on multi-core CPUs.
+
+**Why it exists:** CPython's memory management (reference counting) is not thread-safe. The GIL simplifies this but limits parallelism.
+
+**Impact by workload type:**
+
+**I/O-bound tasks (network calls, file I/O, disk):**
+The GIL is RELEASED during I/O operations. Multiple threads work effectively:
+\`\`\`python
+import concurrent.futures
+import requests
+
+# This actually runs in parallel — GIL released during HTTP calls:
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [executor.submit(requests.get, url) for url in urls]
+    results = [f.result() for f in futures]
+# 10× faster than sequential for 10 HTTP requests
+\`\`\`
+
+**CPU-bound tasks (parsing, compression, math):**
+GIL is NOT released — threads take turns, no speedup from multiple cores:
+\`\`\`python
+# Threading DOESN'T help for CPU work:
+with ThreadPoolExecutor(max_workers=4) as ex:
+    results = list(ex.map(heavy_computation, data))
+# Still single-core performance — threads compete for GIL
+
+# multiprocessing DOES help — separate processes, no GIL:
+from multiprocessing import Pool
+with Pool(4) as p:
+    results = p.map(heavy_computation, data)
+# True 4-core parallelism
+\`\`\`
+
+**asyncio (for I/O-bound concurrency — most scalable for DevOps tools):**
+\`\`\`python
+import asyncio
+import aiohttp
+
+async def check_service(url: str) -> dict:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return {"url": url, "status": resp.status}
+
+async def main():
+    urls = ["https://api1.example.com", "https://api2.example.com"]
+    results = await asyncio.gather(*[check_service(u) for u in urls])
+    return results
+# Single thread, single GIL, handles 1000s of concurrent I/O operations
+\`\`\`
+
+**Rule of thumb:**
+- Network/file I/O → \`threading\` or \`asyncio\`
+- CPU computation → \`multiprocessing\`
+- Mixed → \`ProcessPoolExecutor\` for CPU parts + \`asyncio\` for I/O`,
+            },
+          ],
         },
       ],
     },

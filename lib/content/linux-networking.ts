@@ -1584,6 +1584,108 @@ ip netns exec myns ping 192.168.99.1
 ip netns del myns
 \`\`\`
 `,
+          interviewQuestions: [
+            {
+              question: "A server can't reach an external endpoint. Walk me through your network troubleshooting process.",
+              difficulty: "mid" as const,
+              answer: `**Systematic bottom-up approach:**
+
+**1. Is there a network interface?**
+\`\`\`bash
+ip link show          # interfaces and UP/DOWN state
+ip addr show          # IP addresses assigned
+\`\`\`
+
+**2. Is the route correct?**
+\`\`\`bash
+ip route show
+# default via 10.0.0.1 dev eth0  ← default gateway
+# If no default route → packets don't know where to go
+
+# Test gateway reachability:
+ping 10.0.0.1         # can we reach the gateway?
+\`\`\`
+
+**3. Is DNS working?**
+\`\`\`bash
+dig api.example.com              # full DNS lookup
+dig @8.8.8.8 api.example.com    # bypass local resolver (bypass DNS issue)
+cat /etc/resolv.conf             # check configured nameservers
+\`\`\`
+
+**4. Is the port reachable?**
+\`\`\`bash
+nc -zv api.example.com 443        # TCP connect test
+curl -v https://api.example.com   # full HTTP test with verbose
+\`\`\`
+
+**5. Is there a firewall?**
+\`\`\`bash
+iptables -L -n              # check local iptables rules
+# On AWS: check security group outbound rules
+# On GCP: check VPC firewall egress rules
+\`\`\`
+
+**6. Packet tracing:**
+\`\`\`bash
+traceroute api.example.com    # where does it stop?
+# * * *  → packet is being dropped at that hop
+
+mtr api.example.com           # real-time traceroute with packet loss per hop
+\`\`\`
+
+**7. Capture actual traffic:**
+\`\`\`bash
+tcpdump -n -i eth0 host api.example.com and port 443
+# See if SYN packets go out and if SYN-ACK comes back
+# No SYN-ACK = firewall/routing problem on the remote side
+\`\`\``,
+            },
+            {
+              question: "Explain TCP's three-way handshake and why TIME_WAIT exists.",
+              difficulty: "senior" as const,
+              answer: `**Three-way handshake establishes connection:**
+\`\`\`
+Client                    Server
+  │─── SYN (seq=x) ──────→│   Client wants to connect
+  │←── SYN-ACK (seq=y, ack=x+1) ─│   Server acknowledges, sends its own seq
+  │─── ACK (ack=y+1) ─────→│   Client acknowledges server's seq
+  │═══════ DATA ═══════════│   Connection established, data flows
+\`\`\`
+
+**Four-way teardown (TCP close):**
+\`\`\`
+Initiator                  Receiver
+  │─── FIN ───────────────→│   "I'm done sending"
+  │←── ACK ────────────────│   "Got it"
+  │←── FIN ────────────────│   "I'm done too"
+  │─── ACK ───────────────→│   "Got it"
+  │        (TIME_WAIT)      │
+\`\`\`
+
+**Why TIME_WAIT exists:**
+The initiator (usually the client, or the side that calls \`close()\` first) enters TIME_WAIT for 2×MSL (Maximum Segment Lifetime, typically 60s = 2 minutes total).
+
+**Reason 1 — Ensure final ACK is received:**
+If the last ACK (client→server) is lost, the server will retransmit its FIN. The client in TIME_WAIT can re-send the ACK. Without TIME_WAIT, the client's socket is gone and it would send RST, confusing the server.
+
+**Reason 2 — Prevent old packets from confusing new connections:**
+If you immediately open a new connection on the same port with same source/dest, delayed packets from the old connection could arrive and be interpreted as data in the new connection.
+
+**TIME_WAIT problems at scale:**
+\`\`\`bash
+# High-traffic servers can exhaust port range:
+ss -s | grep TIME-WAIT    # count TIME_WAIT connections
+ss -tan | grep TIME-WAIT | wc -l
+
+# Solutions:
+# 1. Enable SO_REUSEADDR (allows port reuse after TIME_WAIT)
+# 2. Load balancer in front (LB handles connections, backend uses HTTP/1.1 keep-alive)
+# 3. Reduce TIME_WAIT duration (risky):
+sysctl net.ipv4.tcp_fin_timeout=30  # 30s instead of 60s
+\`\`\``,
+            },
+          ],
         },
       ],
     },
