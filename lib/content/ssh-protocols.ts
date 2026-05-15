@@ -516,6 +516,58 @@ sudo fail2ban-client set sshd unbanip 203.0.113.99
           ],
         },
       ],
+      exam: [
+        {
+          question: "Your SSH connection to a bastion host drops every 2 minutes of inactivity, interrupting long-running operations. What two configuration options fix this, and where do you set them?",
+          answer: "Set ServerAliveInterval 60 and ServerAliveCountMax 3 in ~/.ssh/config under 'Host *' (client-side). This sends a keepalive packet every 60 seconds and disconnects after 3 missed responses (3 minutes total). Alternatively, set ClientAliveInterval and ClientAliveCountMax in /etc/ssh/sshd_config on the server side. The client-side config is preferred since you control it without server access.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to reach a PostgreSQL database at db.internal:5432 that is only accessible from bastion.example.com. You are on your laptop. Show the SSH command and how you then connect to the database.",
+          answer: "ssh -L 5432:db.internal:5432 -N -f user@bastion.example.com. The -L creates a local tunnel, -N prevents opening a shell, -f forks to background. Then connect your Postgres client to localhost:5432 as if it were the remote database: psql -h localhost -p 5432 -U admin mydb. The traffic goes: laptop:5432 → SSH tunnel → bastion → db.internal:5432.",
+          difficulty: "mid",
+        },
+        {
+          question: "After rebuilding a server, SSH refuses to connect with 'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED'. You verified the new server fingerprint out-of-band. How do you proceed?",
+          answer: "Remove the stale fingerprint from known_hosts: ssh-keygen -R hostname (or ssh-keygen -R IP-address). Then reconnect and verify the new fingerprint matches what you confirmed out-of-band before accepting it. For servers behind dynamic IPs or load balancers, you can also use 'ssh -o StrictHostKeyChecking=accept-new' to accept only new (not changed) fingerprints automatically.",
+          difficulty: "junior",
+        },
+        {
+          question: "Your team needs to SSH to internal servers through a bastion. You want developers to use their local key without copying it to the bastion. How do you configure this securely?",
+          answer: "Use ProxyJump in ~/.ssh/config instead of ForwardAgent. ProxyJump (or -J on command line) creates an end-to-end encrypted connection through the bastion without exposing your agent socket to it. Config: Host internal-server; HostName 10.0.1.50; ProxyJump bastion-user@bastion.example.com; IdentityFile ~/.ssh/id_ed25519. This is safer than ForwardAgent because a compromised bastion cannot use your agent to authenticate to other systems.",
+          difficulty: "mid",
+        },
+        {
+          question: "A CI/CD pipeline needs to SSH to 30 servers. Each Ansible task opens a new SSH connection, making the pipeline slow. What configuration reduces this overhead significantly?",
+          answer: "Enable SSH multiplexing in ~/.ssh/config or ansible.cfg: ControlMaster auto; ControlPath ~/.ssh/sockets/%r@%h:%p; ControlPersist 10m. Create the sockets directory: mkdir -p ~/.ssh/sockets. In Ansible, also set pipelining = True in ansible.cfg and ssh_args = -o ControlMaster=auto -o ControlPersist=60s. This reuses the same SSH connection for all tasks to a given host, eliminating per-task handshake overhead.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to expose a local webhook receiver (running on port 8080) to an external server so it can POST to your laptop during testing. Write the SSH command.",
+          answer: "ssh -R 9090:localhost:8080 -N user@remote.example.com. This is remote port forwarding (-R): port 9090 on the remote server forwards to localhost:8080 on your laptop. The remote server's application can then POST to localhost:9090 and the traffic arrives at your local port 8080. For this to work across the internet, GatewayPorts yes must be set in sshd_config on the remote server.",
+          difficulty: "mid",
+        },
+        {
+          question: "You are hardening a new SSH server. List the five most critical sshd_config directives to change from defaults, and explain why each matters.",
+          answer: "1. PasswordAuthentication no — eliminates brute-force attacks on passwords, requires key-based auth. 2. PermitRootLogin no — prevents direct root compromise; attackers must compromise a regular account first. 3. AllowUsers alice bob deploy — whitelists only known users, blocks access to system accounts (nobody, www-data etc). 4. MaxAuthTries 3 — limits attempts per connection, slowing brute-force. 5. X11Forwarding no — closes an attack vector if you don't need GUI forwarding. Run sshd -t after editing, then reload (not restart) to preserve existing sessions.",
+          difficulty: "senior",
+        },
+        {
+          question: "A service account key needs to be added to authorized_keys on 50 servers but restricted to run only '/usr/bin/backup.sh'. How do you configure this?",
+          answer: "In ~/.ssh/authorized_keys on each server, prepend options to the public key line: command=\"/usr/bin/backup.sh\",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 AAAA.... The command= option forces execution of only that script regardless of what the client requests. The no-* options close other potential escalation paths. Automate distributing this entry across 50 servers with Ansible or a config management tool.",
+          difficulty: "senior",
+        },
+        {
+          question: "A developer reports their SSH connection with key auth fails with 'Permission denied (publickey)'. The public key is definitely in authorized_keys. What do you check first?",
+          answer: "File permission issues are the most common cause. Check on the server: chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys. The ~/.ssh directory must not be group- or world-writable, and authorized_keys must be mode 600. Also check: the home directory permissions (should not be group-writable), whether SELinux/AppArmor is blocking access, and whether the key format is correct (no line breaks). Use ssh -vvv on the client to see which key is being offered and what the server says.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to SSH from host A to host B to host C in a single command. Host B is only reachable from A, and host C is only reachable from B. Show the command and the equivalent ~/.ssh/config block.",
+          answer: "Command: ssh -J userA@hostA,userB@hostB userC@hostC. Config equivalent: Host hostC; HostName hostC; ProxyJump userA@hostA,userB@hostB; User userC. Each jump host authenticates independently from your local agent. ProxyJump does not require ForwardAgent and does not expose your private key to intermediate hosts — only the final TCP connection is established end-to-end from your client.",
+          difficulty: "mid",
+        },
+      ],
     },
     {
       id: "file-transfer-protocols",
@@ -1000,6 +1052,58 @@ sudo ufw delete allow 21/tcp
               answer: "rsync -avz --delete -e 'ssh -i ~/.ssh/deploy_key' ./dist/ deploy@ftp.example.com:/var/www/html/. This replaces the FTP upload with an SSH-encrypted, delta-efficient sync. Ensure the deploy user has SSH key-based access configured on the server.",
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "You need to deploy a 5GB database dump to a production server over a connection that frequently drops. The dump takes 20 minutes to transfer. What command ensures you can resume the transfer if it fails partway through?",
+          answer: "rsync -avzP dump.sql.gz user@prod:/var/backups/. The -P flag combines --partial (keeps the partially transferred file) and --progress (shows transfer progress). If the connection drops, re-run the same command and rsync resumes from where it stopped. For very large files, also add --checksum to verify integrity: rsync -avzP --checksum dump.sql.gz user@prod:/var/backups/.",
+          difficulty: "junior",
+        },
+        {
+          question: "You run 'rsync -av --delete /src/ /dest/' but accidentally swap src and dest. What happens and how do you prevent this class of mistake?",
+          answer: "rsync copies /dest/ contents into /src/ and deletes anything in /src/ that is not in /dest/, potentially destroying source data. Prevention: always run with --dry-run (-n) first and review the output carefully, especially lines starting with 'deleting'. Use --max-delete=N to abort if more than N files would be deleted. Keep the convention that source always ends with / and destination does not, and double-check argument order before running destructive rsync.",
+          difficulty: "mid",
+        },
+        {
+          question: "A partner company needs to upload XML files to your server daily. They should only access their /uploads directory, with no shell access. They must use SFTP. Walk through the complete setup.",
+          answer: "1. Create group: groupadd sftponly. 2. Create user: useradd -g sftponly -s /sbin/nologin -M partner1. 3. In sshd_config: Subsystem sftp internal-sftp and Match Group sftponly block with ChrootDirectory /srv/sftp/%u, ForceCommand internal-sftp, AllowTcpForwarding no, X11Forwarding no. 4. Create dirs: mkdir -p /srv/sftp/partner1/uploads; chown root:root /srv/sftp/partner1 (chmod 755); chown partner1:sftponly /srv/sftp/partner1/uploads (chmod 750). 5. Set password: passwd partner1. 6. Reload sshd. The chroot dir must be root-owned — sshd enforces this for security.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to sync a local ./app directory to a server, excluding .git, node_modules, and .env files, while deleting stale files on the server. Show the complete rsync command.",
+          answer: "rsync -avz --delete --exclude='.git/' --exclude='node_modules/' --exclude='.env' --exclude='.env.*' ./app/ user@server:/var/www/app/. Always run with -n (dry run) first to verify exclusions and deletions. Add --backup --backup-dir=/var/www/backups/$(date +%Y%m%d) to keep deleted files for a day in case of mistakes.",
+          difficulty: "junior",
+        },
+        {
+          question: "You discover that vsftpd on a legacy server has anonymous_enable=YES and write_enable=YES. What is the immediate security impact and what do you do right now?",
+          answer: "Immediate impact: anyone can connect without credentials and upload arbitrary files — malware, illegal content, or fill the disk. Also, any existing anonymous uploads could be malware already being served. Immediate actions: 1. Set anonymous_enable=NO in /etc/vsftpd.conf and sudo systemctl reload vsftpd. 2. Audit the anonymous FTP directory for suspicious files. 3. Review /var/log/vsftpd.log for recent anonymous upload activity. 4. Block port 21 at the firewall if FTP is not needed at all. 5. File a security incident report.",
+          difficulty: "mid",
+        },
+        {
+          question: "An FTP client connects and authenticates successfully, but file listings and downloads hang indefinitely. What is the most likely cause and how do you diagnose it?",
+          answer: "The client is using active mode (the default in some old clients), but the server's outbound connections to the client's random data port are blocked by a firewall or NAT. Diagnosis: switch the FTP client to passive mode (PASV). If passive mode also hangs, the server's passive port range (pasv_min_port to pasv_max_port in vsftpd.conf) is not open in the server firewall. Fix: open the configured passive port range: ufw allow 40000:40100/tcp.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to automate weekly SFTP uploads of reports from a Linux server to a partner's SFTP server, using key-based auth and a specific identity file. Write the script approach.",
+          answer: "Create a batch file and run sftp in non-interactive mode: echo -e 'cd /incoming\\nput /reports/weekly_report.csv\\nbye' | sftp -i ~/.ssh/partner_key -b /dev/stdin partner-user@partner.example.com. Schedule with cron: 0 6 * * 1 sftp -i ~/.ssh/partner_key -b /etc/sftp-batch.txt partner-user@partner.example.com >> /var/log/sftp-upload.log 2>&1. Ensure the identity file has mode 600 and add the partner's host to known_hosts first to avoid interactive prompts.",
+          difficulty: "mid",
+        },
+        {
+          question: "What does the trailing slash mean in 'rsync -av src/ dest/' versus 'rsync -av src dest/', and why is this one of rsync's most common mistakes?",
+          answer: "With trailing slash on source (src/): rsync copies the CONTENTS of src into dest — files appear directly in dest. Without trailing slash (src): rsync copies the src directory itself into dest, creating dest/src/. The destination layout differs: src/ gives dest/file.txt while src gives dest/src/file.txt. This is dangerous with --delete because the wrong interpretation can delete all files in dest. Always use --dry-run to verify layout before production syncs.",
+          difficulty: "junior",
+        },
+        {
+          question: "A legacy banking system can only receive files via plain FTP (no FTPS, no SFTP). Your company requires all data transfers to be encrypted. How do you handle this architectural constraint?",
+          answer: "Since the endpoint cannot support encrypted protocols natively, establish an encrypted tunnel to carry the FTP traffic: use an SSH tunnel (ssh -L 2121:banking-ftp.partner.com:21 user@vpn-gateway) and point your FTP client at localhost:2121. The FTP session travels encrypted through the SSH tunnel to the gateway, then on to the banking system. Document this as a compensating control in your security exceptions. Also ensure the data itself is encrypted at rest (GPG-encrypted file) before transferring.",
+          difficulty: "senior",
+        },
+        {
+          question: "You need to rsync files to a server that runs SSH on port 2222 and requires a specific identity file. Write the command.",
+          answer: "rsync -avz -e 'ssh -p 2222 -i ~/.ssh/id_ed25519_prod' ./dist/ user@server.example.com:/var/www/html/. The -e flag specifies the remote shell command. All SSH flags (port, identity, etc.) are passed inside the quoted string. For repeated use, add this to ~/.ssh/config: Host server.example.com; Port 2222; IdentityFile ~/.ssh/id_ed25519_prod — then rsync will use it automatically without the -e flag.",
+          difficulty: "junior",
         },
       ],
     },
@@ -1645,6 +1749,58 @@ jwt decode --secret "\$JWT_SECRET" "\$JWT_TOKEN"
               answer: "chronyc tracking — shows current sync status, reference server, and offset. chronyc sources -v — lists all NTP sources and their quality. To force immediate correction: sudo chronyc makestep. This is a one-time step adjustment; normally chrony slews the clock gradually to avoid disrupting applications.",
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "Users report that password reset emails from your app are going to spam. You have SPF configured but DKIM is not set up. What is your step-by-step remediation?",
+          answer: "1. Generate DKIM keys for your MTA or configure DKIM signing in your email provider (SES, SendGrid). 2. Publish the public key as a DNS TXT record: mail._domainkey.yourdomain.com TXT 'v=DKIM1; k=rsa; p=...' . 3. Add a DMARC record starting with monitoring mode: _dmarc.yourdomain.com TXT 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com' . 4. Send test emails and verify Authentication-Results header shows dkim=pass. 5. After a week of clean reports, move to p=quarantine then p=reject. If deliverability remains poor, check if your sending IP is blacklisted on MXToolbox.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your Postfix mail queue shows 300 deferred messages after a credential rotation. The logs show 'SASL authentication failed'. What happened and how do you fix it?",
+          answer: "The SMTP relay credentials in Postfix's SASL config (/etc/postfix/sasl_passwd) were not updated when the credentials were rotated. Fix: update the credentials in /etc/postfix/sasl_passwd, then run 'postmap /etc/postfix/sasl_passwd' to rebuild the hash database, and 'sudo systemctl reload postfix'. Once Postfix authenticates successfully, run 'postqueue -f' to retry all deferred messages immediately. Check /var/log/mail.log to confirm messages start flowing.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to verify that a domain's email authentication is correctly configured before enabling DMARC enforcement. What dig commands do you run and what do you look for?",
+          answer: "1. dig TXT example.com | grep spf — look for 'v=spf1' record listing authorized senders. 2. dig TXT mail._domainkey.example.com — check DKIM public key is published (v=DKIM1; k=rsa; p=...). 3. dig TXT _dmarc.example.com — verify DMARC record exists. 4. dig MX example.com — confirm MX records point to the correct mail servers. 5. Send a test email to a Gmail account and view the full headers — check 'Authentication-Results' for spf=pass and dkim=pass. Only move DMARC to p=quarantine after all three pass consistently.",
+          difficulty: "mid",
+        },
+        {
+          question: "A DNS change you made 30 minutes ago has not propagated to all users. Some see the old IP, some see the new one. Explain why this happens and what you could have done to minimize the impact window.",
+          answer: "DNS records are cached by resolvers worldwide for their TTL (Time To Live) duration. Users whose resolvers cached the old record before your change will continue receiving the old answer until their cache expires. To minimize the impact window: lower the TTL well in advance (e.g., from 3600 to 60 seconds), wait for the original TTL duration to pass so all caches expire, make the DNS change, verify with 'dig @8.8.8.8' and '@1.1.1.1', then raise the TTL back to normal once confirmed.",
+          difficulty: "junior",
+        },
+        {
+          question: "Your application sends emails but the 'From' header shows 'noreply@app.internal' while SPF is configured for 'company.com'. DMARC is rejecting the messages. What is the issue?",
+          answer: "DMARC requires alignment: the domain in the 'From' header must align with the domain that passes SPF or DKIM. 'app.internal' does not align with 'company.com', so DMARC fails even if SPF passes for the sending IP. Fix: change the From address to 'noreply@company.com' (or a subdomain like 'noreply@mail.company.com' for relaxed alignment), or ensure DKIM signs with a selector under company.com which satisfies DMARC alignment independently of SPF.",
+          difficulty: "senior",
+        },
+        {
+          question: "Kubernetes pods in your cluster cannot resolve 'myservice.default.svc.cluster.local'. External DNS works fine. What do you check?",
+          answer: "1. Check /etc/resolv.conf inside the pod: it should list the cluster DNS IP (typically 10.96.0.10) as the nameserver. 2. Verify CoreDNS pods are running: kubectl get pods -n kube-system -l k8s-app=kube-dns. 3. Test resolution from inside the pod: kubectl exec pod-name -- nslookup myservice.default.svc.cluster.local. 4. Check CoreDNS logs for errors: kubectl logs -n kube-system -l k8s-app=kube-dns. 5. Verify the Service exists: kubectl get svc myservice -n default. 6. Check network policies — they may block UDP/TCP port 53 to CoreDNS.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to check if your application server's email sending IP is on any major blacklists before launching a marketing campaign. What tools and steps do you use?",
+          answer: "1. Find the server's public IP: curl -s ifconfig.me. 2. Check MXToolbox Blacklist Check (mxtoolbox.com/blacklists.aspx) — enters the IP and checks 100+ blacklists. 3. Check specific major blacklists: dig +short 1.2.3.4.zen.spamhaus.org (replace with reversed IP octets). 4. Check Spamhaus, Barracuda, SORBS. If listed: follow the delisting process for each blacklist (usually a web form), fix the root cause (compromised account, open relay), then request delisting. Consider using a dedicated sending IP or an email service (SES, SendGrid) that manages IP reputation.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to send monitoring alerts via email from a shell script without installing an MTA. The SMTP server is smtp.company.com on port 587 with STARTTLS. Show how to do this with curl.",
+          answer: "curl --ssl-reqd --url 'smtp://smtp.company.com:587' --user \"$SMTP_USER:$SMTP_PASS\" --mail-from 'alerts@company.com' --mail-rcpt 'oncall@company.com' --upload-file - << EOF\nFrom: Alerts <alerts@company.com>\nTo: On-Call <oncall@company.com>\nSubject: ALERT: Disk usage critical\n\nDisk usage on prod-server-01 has exceeded 90%.\nEOF\nFor STARTTLS on 587, use 'smtp://' not 'smtps://'. The --ssl-reqd flag requires STARTTLS upgrade.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your team uses Active Directory for authentication. A new Linux server needs to authenticate AD users via SSH using their AD credentials. What approach would you use?",
+          answer: "Join the Linux server to AD using SSSD (System Security Services Daemon) with Kerberos and LDAP: 1. Install: sssd, krb5-user, sssd-ad. 2. Configure /etc/sssd/sssd.conf with the AD domain, LDAP base DN, and Kerberos realm. 3. Join the domain: net ads join -U Administrator. 4. Configure PAM and NSS to use SSSD. 5. In sshd_config: UsePAM yes. AD users can then SSH with their domain credentials. For key-based auth with AD: configure AuthorizedKeysCommand to fetch public keys from LDAP. Ensure NTP is synchronized — Kerberos fails with >5 minute clock skew.",
+          difficulty: "senior",
+        },
+        {
+          question: "A developer asks you to explain the difference between 'dig example.com' and 'dig @8.8.8.8 example.com'. When would you use each?",
+          answer: "'dig example.com' uses the resolver configured in /etc/resolv.conf (usually your local resolver, company DNS, or systemd-resolved). This shows what your machine currently resolves. 'dig @8.8.8.8 example.com' queries Google's public DNS directly, bypassing your local resolver and its cache. Use the @8.8.8.8 form when: troubleshooting DNS propagation (is the change visible externally?), checking if a record is cached locally but different globally, or verifying a record from a known-good resolver when you suspect your local DNS is misconfigured.",
+          difficulty: "junior",
         },
       ],
     },

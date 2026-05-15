@@ -340,6 +340,58 @@ metadata:
           ],
         },
       ],
+      exam: [
+        {
+          question: "A new developer asks why you need Kubernetes when Docker works fine. How do you explain the gap Docker alone cannot fill in production?",
+          answer: "Docker runs containers on a single machine but gives you no answers for multi-host scheduling, automatic restarts on failure, horizontal scaling under load, service discovery when IPs change, or zero-downtime rolling updates. Kubernetes adds an orchestration layer — a control plane that continuously reconciles desired state with actual state across a cluster of machines, handling all of those concerns automatically.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is the role of etcd in a Kubernetes cluster and what is the operational risk if it fails without a backup?",
+          answer: "etcd is the distributed key-value store that holds all cluster state — every object definition, resource quota, and secret. The kube-apiserver reads from and writes to etcd on every operation. If etcd is lost without a backup, the entire cluster state is gone: no record of Deployments, Services, ConfigMaps, or PersistentVolumes. Recovery requires restoring from a snapshot or rebuilding the cluster from scratch, so etcd backup (using etcdctl snapshot save) is a critical SRE responsibility.",
+          difficulty: "mid",
+        },
+        {
+          question: "Walk through exactly what happens in the Kubernetes control plane when you run `kubectl apply -f deployment.yaml`.",
+          answer: "1) kubectl serializes the manifest and sends an HTTP PUT/POST to kube-apiserver. 2) kube-apiserver authenticates and authorizes the request, validates the object schema, and writes the object to etcd. 3) kube-controller-manager's ReplicaSet controller detects the new/updated Deployment and creates/updates the ReplicaSet object. 4) The ReplicaSet controller creates Pod objects with no node assigned. 5) kube-scheduler watches for unscheduled pods, scores nodes by resource availability, affinity, and taints, then writes the chosen node name into the Pod spec. 6) The kubelet on that node watches for pods assigned to itself, pulls the image via containerd, starts the container, and reports status back to the apiserver.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is a Kubernetes Pod and why does Kubernetes use Pods as the smallest unit rather than individual containers?",
+          answer: "A Pod is a wrapper around one or more tightly coupled containers that share the same network namespace (same IP, loopback interface) and can share volumes. Kubernetes schedules, scales, and manages Pods rather than individual containers because some applications require a main container plus sidecar containers (e.g., a log shipper or service mesh proxy) that must always be co-located and co-scheduled. Using a Pod as the unit allows these coupled containers to be treated as a single schedulable entity.",
+          difficulty: "junior",
+        },
+        {
+          question: "A Pod is stuck in `Pending` state. What are the most common causes and how do you diagnose each?",
+          answer: "Run `kubectl describe pod <name>` and check the Events section. Common causes: 1) Insufficient resources — the scheduler cannot find a node with enough CPU/memory; fix by reducing resource requests or adding nodes. 2) No node matches affinity/toleration rules — check nodeSelector, nodeAffinity, and taints on nodes. 3) PVC not bound — if the pod uses a PersistentVolumeClaim that is in Pending state, the pod waits; check `kubectl get pvc`. 4) Image pull errors — if the pod is moving to ContainerCreating and failing; check `kubectl describe` for ImagePullBackOff.",
+          difficulty: "junior",
+        },
+        {
+          question: "Explain the difference between a Kubernetes Service and a Deployment. Why do you need both?",
+          answer: "A Deployment manages the lifecycle of a set of Pod replicas — it ensures the desired number are running, handles rolling updates, and can roll back. A Service provides a stable network endpoint (virtual IP + DNS name) that load-balances traffic across whichever pods match its selector. You need both because pod IPs are ephemeral — they change on every restart. The Service's ClusterIP stays constant, so other applications always have a reliable address to call, regardless of how many replicas exist or what their IPs are.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is the purpose of a ConfigMap and how is it different from directly embedding configuration in a container image?",
+          answer: "A ConfigMap stores non-sensitive configuration data (environment variables, config files) as Kubernetes objects, decoupled from the container image. This allows the same image to run in dev, staging, and production with different configurations — you change the ConfigMap, not the image. Embedding config in the image means rebuilding and redeploying the image for every config change, breaking the 12-factor app principle of separating config from code, and potentially baking sensitive values into the image layer.",
+          difficulty: "junior",
+        },
+        {
+          question: "Describe the kube-scheduler's decision process. What factors influence which node a Pod is placed on?",
+          answer: "The scheduler runs a two-phase process: Filtering removes nodes that cannot satisfy the pod's requirements (insufficient CPU/memory requests, node taints not tolerated, nodeSelector or nodeAffinity not matched, pod anti-affinity conflicts, port conflicts). Scoring ranks the remaining nodes using plugins (LeastAllocated for spreading load, NodeAffinity weight, pod topology spread, image locality). The node with the highest score wins. If scores are equal, a node is chosen at random from the top scorers.",
+          difficulty: "mid",
+        },
+        {
+          question: "What are Labels and Annotations in Kubernetes and what are the key differences in their intended use?",
+          answer: "Labels are key-value pairs used for identification and selection — Services, ReplicaSets, and NetworkPolicies use label selectors to target specific pods. They are indexed and queryable with `kubectl get pods -l app=payments`. Annotations are also key-value pairs but intended for non-identifying metadata: tool configuration (prometheus.io/scrape), git commit SHAs, descriptions, or external system references. Annotations are not used for selection and are not indexed. The rule of thumb: if something needs to be selected or filtered on, use a label; if it is informational metadata for tooling, use an annotation.",
+          difficulty: "mid",
+        },
+        {
+          question: "A production cluster's control plane node loses network connectivity for 5 minutes. What happens to running workloads during the outage and what happens when connectivity is restored?",
+          answer: "Running pods on worker nodes continue to run — the kubelet runs containers independently of the control plane and does not stop pods if it loses contact with the apiserver. However, no new scheduling decisions are made, no rolling updates proceed, and no self-healing occurs (if a pod crashes, it is not rescheduled). The Node controller in kube-controller-manager starts marking nodes as NotReady after the grace period. When connectivity is restored, kubelets re-register, the apiserver receives updated node status, and the controller manager reconciles any missed events (restarting crashed pods, rescheduling pods from nodes marked Unknown).",
+          difficulty: "senior",
+        },
+      ],
     },
     {
       id: "core-workloads",
@@ -738,6 +790,58 @@ DaemonSet guarantees **exactly one pod per node** (matching the node selector):
 Example: If you have a 100-node cluster and deploy Datadog Agent as a DaemonSet vs a Deployment with replicas=100, the Deployment might cluster all 100 agents on 20 nodes, leaving 80 nodes unmonitored.`,
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "Your Deployment has 3 replicas but only 1 pod is in Ready state. The other two are in CrashLoopBackOff. What steps do you take to diagnose the issue?",
+          answer: "1) Run `kubectl get pods` to confirm the states. 2) Run `kubectl logs <crashing-pod> --previous` to see the last crash output — this usually reveals the root cause (missing env var, failed DB connection, OOMKilled). 3) Run `kubectl describe pod <crashing-pod>` to check Events for image pull failures, resource limits, or failed liveness probes. 4) Check if the issue is a misconfigured environment variable or secret by running `kubectl exec` into a healthy pod and checking the env. 5) Check resource usage with `kubectl top pod` to see if OOM is the cause.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is the difference between a Deployment's `RollingUpdate` and `Recreate` strategies? When would you use each?",
+          answer: "RollingUpdate (default) gradually replaces old pods with new ones, maintaining availability during the rollout — controlled by `maxSurge` (extra pods allowed above desired count) and `maxUnavailable` (pods allowed to be down). Recreate terminates all old pods before creating new ones, causing a brief downtime window. Use RollingUpdate for most stateless services where you need zero downtime. Use Recreate when the new version is incompatible with the old version running simultaneously — for example, a database schema migration that cannot coexist with the old application code.",
+          difficulty: "junior",
+        },
+        {
+          question: "Explain what `maxSurge: 1` and `maxUnavailable: 0` mean in a RollingUpdate Deployment strategy with 10 replicas.",
+          answer: "With these settings, Kubernetes keeps all 10 existing pods running (0 unavailable) while spinning up 1 additional new-version pod (max 11 pods total during rollout). Once the new pod is Ready, one old pod is terminated, bringing it back to 10. This cycle repeats until all 10 pods run the new version. This is the safest rolling update strategy — no capacity is lost — but it requires extra headroom (11 pods worth of resources). It is ideal for production services where availability is critical.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is the difference between a Deployment and a StatefulSet? Give a concrete use case for each.",
+          answer: "A Deployment manages interchangeable, stateless pods — any pod can be killed and replaced with a fresh one and the application still works correctly. Pods get random names and share PVCs if any. A StatefulSet gives each pod a stable, ordered identity (pod-0, pod-1, pod-2), a stable DNS hostname (pod-0.service.namespace.svc), and an individual PersistentVolumeClaim per pod that follows the pod if it is rescheduled. Use Deployments for stateless services (APIs, web servers, workers). Use StatefulSets for databases (PostgreSQL, MongoDB), distributed systems requiring quorum (Kafka, Zookeeper, Elasticsearch), or any application that requires stable network identity.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to run a log-shipping agent on every node in the cluster, including nodes added in the future. What Kubernetes resource do you use and why?",
+          answer: "Use a DaemonSet. It ensures exactly one pod runs on every node that matches the DaemonSet's node selector. When a new node joins the cluster, the DaemonSet controller automatically schedules a pod on it — no manual intervention needed. Unlike a Deployment with replicas equal to the node count, a DaemonSet guarantees one-per-node placement regardless of scheduling pressure, and it runs on nodes that are 'full' for normal pods. Common DaemonSet use cases: log collectors (Fluentd, Filebeat), monitoring agents (Datadog, Prometheus node exporter), CNI plugins, and storage drivers.",
+          difficulty: "junior",
+        },
+        {
+          question: "A Deployment rollout is stuck — new pods are created but they never become Ready. The rollout does not proceed. What do you investigate?",
+          answer: "1) Run `kubectl rollout status deployment/<name>` to confirm the rollout is blocked. 2) Run `kubectl get pods` to find pods in non-Ready states. 3) `kubectl describe pod <new-pod>` — check if the readiness probe is failing (wrong port, wrong path, app startup too slow requiring `initialDelaySeconds` increase). 4) Check if the pod is in CrashLoopBackOff (`kubectl logs --previous`). 5) Check if resource requests cannot be satisfied (pods Pending). 6) If `minReadySeconds` is set, confirm the pod has been stable for that duration. Fix the probe configuration or the application startup issue, then resume or roll back with `kubectl rollout undo`.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is a liveness probe vs a readiness probe in Kubernetes? What happens when each fails?",
+          answer: "A readiness probe determines whether a pod should receive traffic. When it fails, the pod is removed from the Service's endpoints — it stops getting requests but keeps running. This is used for slow startup or temporary unavailability (e.g., loading a model into memory). A liveness probe determines whether a pod is alive. When it fails a configured number of times (failureThreshold), Kubernetes kills the container and restarts it (subject to the pod's restartPolicy). Use liveness probes to recover from deadlocks or infinite loops that would otherwise leave a non-functional pod running indefinitely.",
+          difficulty: "mid",
+        },
+        {
+          question: "How do you perform a canary deployment using Kubernetes primitives (no Argo Rollouts or Flagger)?",
+          answer: "Create two Deployments — `app-stable` with 9 replicas and `app-canary` with 1 replica — both using the same `app: myapp` label that the Service selects on. The Service will distribute traffic roughly 90%/10% (proportional to pod count). Monitor error rates and latency on the canary. If healthy, gradually scale up `app-canary` and scale down `app-stable`. If problematic, scale `app-canary` to 0. This is a manual process; tools like Argo Rollouts automate progressive traffic shifting with automated analysis and rollback.",
+          difficulty: "senior",
+        },
+        {
+          question: "What is a PodDisruptionBudget (PDB) and why is it important during a Deployment rollout or node drain?",
+          answer: "A PodDisruptionBudget limits the number of pods of a given application that can be voluntarily disrupted simultaneously. You define either `minAvailable` (minimum pods that must stay up) or `maxUnavailable` (maximum pods that can be down). During a `kubectl drain` (node maintenance) or a cluster upgrade, Kubernetes checks PDBs before evicting pods — if evicting a pod would violate the PDB, it waits. This prevents a node drain from taking down all replicas of a critical service at once. Example: `minAvailable: 2` on a 3-replica Deployment ensures at least 2 are always running during disruptions.",
+          difficulty: "senior",
+        },
+        {
+          question: "You need to run a one-off database migration job before a new Deployment goes live. What Kubernetes resource do you use and what are its key configuration fields?",
+          answer: "Use a Kubernetes Job. Key fields: `completions` — number of successful pod completions required (1 for a one-off migration). `parallelism` — how many pods run concurrently. `backoffLimit` — how many times to retry before marking the Job as failed. `restartPolicy: Never` or `OnFailure` (Never is preferred for migrations so each attempt is a fresh pod and logs are preserved). For scheduling the migration before the Deployment, use a Helm hook (`helm.sh/hook: pre-upgrade`) or an init container in the Deployment, though a pre-upgrade Job is cleaner for schema migrations.",
+          difficulty: "mid",
         },
       ],
     },
@@ -1145,6 +1249,58 @@ Without DNS, \`kubectl exec -- curl my-service\` fails with "Name or service not
           ],
         },
       ],
+      exam: [
+        {
+          question: "What is the difference between a ClusterIP, NodePort, and LoadBalancer Service in Kubernetes? When would you use each?",
+          answer: "ClusterIP (default) assigns a virtual IP reachable only within the cluster — use for internal service-to-service communication. NodePort exposes the Service on a static port on every node's IP, making it reachable from outside the cluster via <NodeIP>:<NodePort> — use for development or on-premises environments without a cloud load balancer. LoadBalancer provisions an external cloud load balancer (AWS ELB, GCP CLB) that routes external traffic to the Service — use for production internet-facing services in cloud environments. Each LoadBalancer Service typically costs money per cloud provider.",
+          difficulty: "junior",
+        },
+        {
+          question: "A pod cannot reach another service by its DNS name (e.g., `payments-api.default.svc.cluster.local`). The service exists. What are the possible causes and how do you debug?",
+          answer: "1) Verify DNS resolution: `kubectl exec -it <pod> -- nslookup payments-api.default.svc.cluster.local`. If it fails, check CoreDNS pods are running (`kubectl get pods -n kube-system`). 2) Verify the Service selector matches the target pod labels: `kubectl describe svc payments-api` and compare selector to `kubectl get pods --show-labels`. 3) Check if the target pods are Ready — unhealthy pods are removed from Endpoints. 4) If a NetworkPolicy is in place, verify it permits ingress on the correct port from the source pod's namespace/labels. 5) Check `kubectl get endpoints payments-api` — if empty, no pods match the selector.",
+          difficulty: "mid",
+        },
+        {
+          question: "Explain how Kubernetes Ingress works. What components are involved and what does the Ingress controller do?",
+          answer: "An Ingress resource is a Kubernetes API object that defines HTTP/HTTPS routing rules — which hostname and path maps to which Service. The Ingress resource itself does nothing on its own; it requires an Ingress controller (NGINX, Traefik, AWS ALB Ingress Controller, etc.) — a pod running in the cluster that watches for Ingress objects and configures a reverse proxy accordingly. When a request arrives at the load balancer in front of the cluster, the Ingress controller routes it to the correct Service based on Host header and URL path matching. TLS termination happens at the Ingress controller using a Secret referenced by the Ingress.",
+          difficulty: "mid",
+        },
+        {
+          question: "You have three microservices: frontend, API, and database. Design the Service types for each and justify your choices.",
+          answer: "Database: ClusterIP only — it should never be exposed outside the cluster. Only the API should be able to reach it, enforced with a NetworkPolicy. API: ClusterIP — only the frontend needs to call it internally; or optionally a LoadBalancer if mobile clients call it directly. Frontend: LoadBalancer (or NodePort) — it serves end users, so it needs an externally accessible endpoint. In production, you would typically put an Ingress in front of the frontend and API (with path-based routing), using a single LoadBalancer for the Ingress controller, reducing cloud LB costs.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is a Kubernetes NetworkPolicy and what is the default behavior of a cluster without any NetworkPolicies applied?",
+          answer: "Without any NetworkPolicies, all pods can communicate with all other pods across all namespaces — this is the default open behavior. A NetworkPolicy is a namespaced object that restricts ingress and/or egress traffic to/from pods matching a podSelector. Once any NetworkPolicy selects a pod, that pod's traffic is restricted to what the policies explicitly allow — a default-deny model is achieved by creating a policy that selects all pods but specifies no ingress/egress rules. NetworkPolicies are enforced by the CNI plugin (Calico, Cilium, Weave) — not all CNI plugins support them (e.g., Flannel does not).",
+          difficulty: "mid",
+        },
+        {
+          question: "How does kube-proxy implement Service routing? What is the difference between iptables and IPVS mode?",
+          answer: "kube-proxy watches for Service and Endpoint changes and programs the node's network stack to route ClusterIP traffic to pod IPs. In iptables mode (default), kube-proxy creates iptables DNAT rules for each Service endpoint — traffic to the ClusterIP is randomly NAT'd to one of the endpoint pod IPs. This works well up to a few thousand services but has O(n) rule lookup time. In IPVS mode, kube-proxy uses the Linux kernel's IP Virtual Server, which uses hash tables for O(1) lookups and supports advanced load-balancing algorithms (round-robin, least connections, shortest expected delay). IPVS mode is recommended for large clusters with thousands of Services.",
+          difficulty: "senior",
+        },
+        {
+          question: "You need to restrict a payment service pod so it can only receive traffic from the frontend and cannot make any outbound calls except to the database on port 5432. Write the NetworkPolicy logic.",
+          answer: "You need two rules on the payment service pod: an ingress rule allowing traffic only from pods with label `app: frontend`, and an egress rule allowing traffic only to pods with label `app: database` on port 5432, plus an egress rule for DNS (port 53 UDP/TCP to kube-dns). The NetworkPolicy selects pods with `app: payments`, specifies `policyTypes: [Ingress, Egress]`, ingress from `podSelector: {matchLabels: {app: frontend}}`, and egress to `podSelector: {matchLabels: {app: database}}` port 5432 plus to kube-dns namespace. All other ingress and egress is implicitly denied once the policy is applied.",
+          difficulty: "senior",
+        },
+        {
+          question: "What is the DNS naming convention for Services in Kubernetes and how does a pod resolve a service in another namespace?",
+          answer: "The full DNS name for a Service is `<service-name>.<namespace>.svc.cluster.local`. Within the same namespace, pods can use just `<service-name>` (short form) because the search domain includes the local namespace. To reach a service in a different namespace, pods must use at minimum `<service-name>.<namespace>` or the full FQDN. For example, a pod in the `frontend` namespace calling the `payments-api` Service in the `payments` namespace uses `payments-api.payments` or `payments-api.payments.svc.cluster.local`. This is resolved by CoreDNS running in kube-system.",
+          difficulty: "junior",
+        },
+        {
+          question: "An Ingress with TLS is configured but the browser reports an SSL certificate warning. What are the possible causes?",
+          answer: "1) The TLS Secret referenced in the Ingress does not exist or is in the wrong namespace — check `kubectl get secret <tls-secret> -n <ingress-namespace>`. 2) The certificate in the Secret has expired — check with `kubectl get secret <name> -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -dates`. 3) The certificate CN/SAN does not match the hostname in the Ingress rule. 4) The Ingress controller is using a default self-signed certificate as fallback — check that the `spec.tls[].secretName` in the Ingress matches exactly. 5) cert-manager has not yet issued the certificate — check `kubectl get certificate` and `kubectl describe certificate`.",
+          difficulty: "mid",
+        },
+        {
+          question: "Describe what happens at the network level when Pod A in namespace `frontend` calls `http://api-service.backend:8080/users`.",
+          answer: "1) Pod A's DNS resolver sends a query for `api-service.backend.svc.cluster.local` to CoreDNS (at the cluster DNS IP, e.g., 10.96.0.10). 2) CoreDNS returns the ClusterIP of `api-service` in the `backend` namespace (e.g., 10.100.45.23). 3) Pod A sends a TCP packet to 10.100.45.23:8080. 4) iptables (kube-proxy rules) on Pod A's node intercepts the packet and DNAT's it to one of the actual pod IPs backing `api-service` (e.g., 192.168.1.55:8080) — chosen randomly or via IPVS. 5) The packet is routed via the CNI overlay network to the target node. 6) The target pod receives the request on port 8080. On the return path, conntrack reverses the NAT.",
+          difficulty: "senior",
+        },
+      ],
     },
     {
       id: "config-and-storage",
@@ -1448,6 +1604,58 @@ kubectl describe pvc postgres-data
 **Common mistake**: Deploying a stateless app with 3 replicas, giving it an EBS PVC for shared file storage, then wondering why 2 of the 3 pods are stuck in ContainerCreating. Fix: use EFS (RWX) for shared storage, or move the storage to S3 and access it via the AWS SDK instead.`,
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "What is the difference between mounting a ConfigMap as environment variables versus mounting it as a volume file? What are the operational implications of each?",
+          answer: "When mounted as environment variables, the values are injected at pod startup and never change — updating the ConfigMap requires restarting the pod for new values to take effect. When mounted as a volume (file), Kubernetes periodically syncs ConfigMap changes to the mounted file (kubelet sync period, default ~1 minute) without restarting the pod — the application must watch the file and reload its config. Use env vars for simple key-value config that rarely changes. Use volume mounts for complex config files (NGINX config, Prometheus rules) where live reload is important.",
+          difficulty: "mid",
+        },
+        {
+          question: "Kubernetes Secrets are 'not secure by default.' What does this mean and what solutions exist for production-grade secret management?",
+          answer: "By default, Secrets are stored in etcd base64-encoded (not encrypted) — anyone with etcd access or RBAC permission to `get secrets` can read them. Additionally, Secrets appear in pod specs, environment variables, and audit logs. Solutions: 1) Enable etcd encryption at rest (EncryptionConfiguration) — encrypts Secret data before writing to etcd. 2) Sealed Secrets (Bitnami) — encrypts Secrets with a cluster-side key so encrypted form is safe to commit to git. 3) External Secrets Operator — syncs secrets from AWS Secrets Manager, HashiCorp Vault, or GCP Secret Manager into Kubernetes Secrets. 4) Use CSI Secret Store driver to mount secrets directly from Vault without creating a Kubernetes Secret at all.",
+          difficulty: "mid",
+        },
+        {
+          question: "A pod is failing because it cannot find an environment variable that should come from a Secret. How do you debug this?",
+          answer: "1) Check if the Secret exists: `kubectl get secret <name> -n <namespace>`. 2) Verify the Secret has the expected key: `kubectl describe secret <name>` (shows keys, not values). 3) Check the pod spec references the correct Secret name and key: `kubectl describe pod <pod>` — look for `envFrom` or `env[].valueFrom.secretKeyRef`. 4) If the Secret exists but the pod fails to start with 'secret not found', the pod was created before the Secret — restart the pod. 5) Check RBAC — if using a service account that cannot read Secrets, the kubelet may fail to inject them. 6) Decode and verify the value: `kubectl get secret <name> -o jsonpath='{.data.<key>}' | base64 -d`.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is the difference between a PersistentVolume (PV) and a PersistentVolumeClaim (PVC)? How does dynamic provisioning work?",
+          answer: "A PV is a cluster-level resource representing a piece of actual storage (an EBS volume, NFS share, etc.) — created by an admin or dynamically. A PVC is a namespace-level resource — a request for storage by a pod, specifying size, access mode, and StorageClass. Kubernetes binds a PVC to a matching PV. Dynamic provisioning: when a PVC references a StorageClass, the StorageClass's provisioner (e.g., EBS CSI driver) automatically creates a PV and the underlying cloud storage, then binds them — no manual PV creation needed. This is the standard pattern in cloud environments. The PVC remains even if the pod is deleted; the PV (and cloud storage) remains until the PVC is deleted, depending on the `reclaimPolicy` (Delete vs Retain).",
+          difficulty: "mid",
+        },
+        {
+          question: "Three application pods all need to read from the same shared filesystem. You are on AWS. What PVC access mode and storage class do you use and why?",
+          answer: "Use `ReadWriteMany` (RWX) access mode with an EFS-backed StorageClass (using the AWS EFS CSI driver). EBS volumes only support ReadWriteOnce (one node at a time) — they cannot be mounted on multiple nodes simultaneously, so multiple pods on different nodes would fail to mount the EBS PVC. EFS is a managed NFS service that supports concurrent mounts from multiple nodes and pods. Configure the StorageClass with `provisioner: efs.csi.aws.com`, create a PVC with `accessModes: [ReadWriteMany]`, and all three pods reference the same PVC in their volumes.",
+          difficulty: "mid",
+        },
+        {
+          question: "What happens to a PersistentVolumeClaim and its data when a pod using it is deleted? When a StatefulSet is scaled to zero?",
+          answer: "When a pod is deleted, the PVC and its data are not deleted — PVCs are independent resources with their own lifecycle. The pod simply loses its mount. If another pod references the same PVC, it can mount it and access the same data. When a StatefulSet is scaled to zero, all pods are deleted but the `volumeClaimTemplates` PVCs remain — they are not garbage collected by the StatefulSet controller. This is intentional data safety. To delete the PVCs, you must do so manually (`kubectl delete pvc`). The underlying PV reclaim behavior then depends on the `reclaimPolicy`: `Delete` removes the cloud storage, `Retain` keeps it for manual recovery.",
+          difficulty: "mid",
+        },
+        {
+          question: "A StatefulSet pod `db-2` is in a crash loop and you need to inspect its data volume. How do you access the data without the application running?",
+          answer: "1) Identify the PVC bound to `db-2`: `kubectl get pvc -l statefulset.kubernetes.io/pod-name=db-2` or by naming convention (volumeClaimTemplate name + pod name). 2) Create a temporary pod that mounts the same PVC: write a Pod manifest using the PVC name, with a simple image (busybox or ubuntu), and `command: ['sleep', '3600']`. Apply it with `kubectl apply -f debug-pod.yaml`. 3) `kubectl exec -it debug-pod -- sh` to explore the volume data. 4) After debugging, delete the debug pod. Note: ensure the StatefulSet pod is not running simultaneously if the PVC is ReadWriteOnce.",
+          difficulty: "senior",
+        },
+        {
+          question: "What is a StorageClass in Kubernetes and how does it affect PVC provisioning and performance?",
+          answer: "A StorageClass defines the type of storage to provision — it references a provisioner (driver) and parameters like disk type, IOPS, and reclaim policy. When a PVC specifies a StorageClass, the associated provisioner dynamically creates a PV with the specified characteristics. Examples on AWS: `gp3` StorageClass using the EBS CSI driver provisions general-purpose SSD volumes; a `io2` StorageClass provisions high-IOPS provisioned IOPS SSD for database workloads. StorageClass also controls `reclaimPolicy` (Delete or Retain) and `allowVolumeExpansion`. Without a StorageClass reference, a PVC uses the default StorageClass in the cluster.",
+          difficulty: "mid",
+        },
+        {
+          question: "How do you update a ConfigMap value and propagate the change to running pods with minimal disruption?",
+          answer: "Edit the ConfigMap: `kubectl edit configmap <name>` or `kubectl apply -f updated-configmap.yaml`. If pods mount the ConfigMap as a volume, the kubelet syncs the updated file to the pod within ~1 minute (no pod restart needed, but the app must re-read the file). If pods consume the ConfigMap as environment variables, the new values are NOT reflected until the pod restarts — perform a rolling restart: `kubectl rollout restart deployment/<name>`. Note: for critical config changes, always validate the new config before applying, and use an immutable ConfigMap + update the reference in the Deployment to trigger a controlled rollout.",
+          difficulty: "mid",
+        },
+        {
+          question: "A developer accidentally deleted a Secret that a production Deployment depends on. The pods are now crash-looping. What is your recovery plan?",
+          answer: "Immediate mitigation: 1) Scale the Deployment to 0 to stop crash-loop noise and prevent further restarts burning resources: `kubectl scale deployment/<name> --replicas=0`. 2) Recreate the Secret from your source of truth — a secrets manager (AWS Secrets Manager, Vault), a Sealed Secret in git, or a backup. Never store plaintext secrets in git. 3) Restore: `kubectl apply -f secret.yaml` or use External Secrets Operator to re-sync. 4) Scale the Deployment back up: `kubectl scale deployment/<name> --replicas=3`. Prevention: enable Kubernetes RBAC to restrict who can delete Secrets, use External Secrets Operator so Secrets are auto-reconciled from the source of truth, and consider Velero for etcd-level backup of all cluster resources.",
+          difficulty: "senior",
         },
       ],
     },
@@ -1889,6 +2097,58 @@ helm upgrade payments ./chart \
 **What NOT to do**: Never put plaintext passwords in values.yaml and commit to git. This is one of the most common secret leak vectors — git history is forever.`,
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "A pod is in `CrashLoopBackOff` state. What kubectl commands do you run to diagnose it and in what order?",
+          answer: "1) `kubectl get pod <name> -n <namespace>` — confirm the state and see restart count. 2) `kubectl describe pod <name> -n <namespace>` — check Events for OOMKilled, failed probes, image pull errors, or volume mount failures. 3) `kubectl logs <name> -n <namespace> --previous` — view logs from the last crashed container (the current container may have no logs if it crashes immediately). 4) If the container exits too fast to exec into, temporarily override the command: `kubectl debug <pod> -it --copy-to=debug-pod --container=<name> -- sh` to get a shell. 5) Check resource usage: `kubectl top pod <name>` — if OOMKilled appears in describe, increase the memory limit.",
+          difficulty: "junior",
+        },
+        {
+          question: "How do you use `kubectl port-forward` and when is it the right debugging tool? What are its limitations in production?",
+          answer: "`kubectl port-forward pod/<name> <local-port>:<pod-port>` or `kubectl port-forward svc/<name> <local-port>:<svc-port>` tunnels traffic from your local machine to the pod/service through the API server. It is ideal for debugging — accessing a database, internal API, or metrics endpoint that has no external exposure, without modifying any Service type. Limitations: it is a temporary tunnel that terminates when the kubectl process ends; it uses the apiserver as a proxy (adds latency); it is not suitable for persistent connections or production traffic; only one user at a time per forwarded port. Never use port-forward as a production networking solution.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to run a debugging container alongside a running pod that has no shell. How do you do this with modern kubectl?",
+          answer: "Use `kubectl debug -it <pod-name> --image=busybox --target=<container-name>` (ephemeral containers, available since Kubernetes 1.23 stable). This injects a temporary container into the running pod's namespace, sharing its process namespace (with `--target`) so you can inspect the main process, filesystem, and network without modifying the original pod spec. Alternatively, `kubectl debug <pod-name> --copy-to=debug-pod --image=ubuntu` creates a copy of the pod with your debug image substituted — useful when the cluster does not allow ephemeral containers. After debugging, delete the debug pod with `kubectl delete pod debug-pod`.",
+          difficulty: "mid",
+        },
+        {
+          question: "What does `kubectl rollout history deployment/<name>` show and how do you roll back to a specific previous version?",
+          answer: "`kubectl rollout history deployment/<name>` lists the revision history of the Deployment, showing revision number and the change-cause annotation if set. By default only 10 revisions are kept (configurable via `revisionHistoryLimit`). To roll back to the previous version: `kubectl rollout undo deployment/<name>`. To roll back to a specific revision: `kubectl rollout undo deployment/<name> --to-revision=3`. To see what changed in a specific revision: `kubectl rollout history deployment/<name> --revision=3`. Always set `--record` (deprecated) or use the `kubernetes.io/change-cause` annotation to document what each revision was for.",
+          difficulty: "junior",
+        },
+        {
+          question: "What is Helm and how does it improve on applying raw Kubernetes YAML manifests?",
+          answer: "Helm is a package manager for Kubernetes. It bundles related Kubernetes manifests into a Chart — a directory of templates plus a values.yaml file. Benefits over raw YAML: 1) Templating — reuse the same chart with different values per environment (dev vs prod), avoiding copy-paste duplication. 2) Release management — Helm tracks what was deployed (release history), enabling atomic upgrades and `helm rollback`. 3) Dependency management — Charts can declare dependencies on other Charts (e.g., a PostgreSQL subchart). 4) Single install command — `helm install my-app ./chart -f prod-values.yaml` applies all resources atomically. 5) Ecosystem — thousands of community Charts on Artifact Hub for databases, monitoring, ingress controllers, etc.",
+          difficulty: "junior",
+        },
+        {
+          question: "Explain the `helm upgrade --install` pattern. Why do teams use it in CI/CD pipelines instead of separate `helm install` and `helm upgrade`?",
+          answer: "`helm upgrade --install <release> <chart>` installs the release if it does not exist, or upgrades it if it does — a single idempotent command. In CI/CD pipelines this is preferred because the pipeline does not need to check whether a release already exists, avoiding race conditions or failures when the release was manually deleted. It is safe to run on every push. Additional useful flags: `--atomic` (rollback automatically if the upgrade fails), `--wait` (wait for all pods to be Ready before reporting success), `--timeout` (maximum wait time), `--set image.tag=${GIT_SHA}` (inject the image tag from CI).",
+          difficulty: "mid",
+        },
+        {
+          question: "How do you find which pod is consuming the most memory in a namespace?",
+          answer: "Use `kubectl top pods -n <namespace> --sort-by=memory` — this returns pods sorted by memory usage in descending order. You can also add `--containers` flag to break down usage per container within each pod. For cluster-wide: `kubectl top pods -A --sort-by=memory`. Note: `kubectl top` requires metrics-server to be installed in the cluster. If metrics-server is not available, use Prometheus with `container_memory_working_set_bytes` metric or check node-level usage with `kubectl top nodes`.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to check all Kubernetes events in a namespace sorted by time to understand what happened during a recent incident. How do you do this?",
+          answer: "`kubectl get events -n <namespace> --sort-by='.lastTimestamp'` shows all events sorted chronologically. For a specific resource: `kubectl describe pod <name>` shows that resource's events inline. Events older than 1 hour are typically deleted by the event TTL. For production incident investigation, use `kubectl get events -n <namespace> -o json` piped through jq for filtering, or use a logging/monitoring stack (Datadog, Prometheus + Alertmanager) that scrapes and retains events long-term. Events are a critical first stop — they show scheduling failures, image pull errors, OOMKills, probe failures, and controller actions.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is the difference between `helm install`, `helm template`, and `helm lint`? When do you use each in a CI pipeline?",
+          answer: "`helm lint ./chart` validates the chart structure and template syntax without connecting to a cluster — use this in CI on every PR to catch template errors early. `helm template ./chart -f values.yaml` renders the templates locally and prints the resulting YAML without installing anything — use this to inspect what would be deployed, pipe into `kubectl apply --dry-run=server`, or pass to conftest/OPA for policy validation. `helm install`/`helm upgrade --install` actually deploys to the cluster. A typical CI pipeline runs: lint → template (+ policy check) → upgrade --install (against a test cluster) → test (`helm test`) → promote to production.",
+          difficulty: "mid",
+        },
+        {
+          question: "A Helm upgrade failed halfway through. Some resources were updated, some were not. How do you recover?",
+          answer: "1) Check the release status: `helm status <release>` — if it shows `failed`, the release is in a broken state. 2) View what went wrong: `helm history <release>` — find the failed revision and `helm status <release> --revision=<n>`. 3) Roll back to the last known-good revision: `helm rollback <release> <previous-revision>`. Helm recreates/patches resources to match the previous state. 4) If `--atomic` was used, Helm automatically rolled back on failure. 5) If rollback also fails (e.g., due to immutable field changes), you may need to manually delete conflicting resources and re-run. To prevent partial failures, always use `--atomic` and `--wait` in production upgrades.",
+          difficulty: "senior",
         },
       ],
     },
@@ -2662,6 +2922,58 @@ argocd app set payments-api --sync-policy none
 4. **Required PR approval**: Enforce CODEOWNERS so production manifests need a second reviewer`,
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "Your API pods are under heavy load and the HPA has not scaled up even though CPU is above the target threshold. What are the possible reasons?",
+          answer: "1) Metrics server is not installed or not returning metrics — `kubectl top pods` fails; HPA cannot act without metrics. 2) The HPA `minReplicas` equals `maxReplicas` — it cannot scale. 3) The scale-up stabilization window (default 5 minutes) is preventing rapid scale-up; check `kubectl describe hpa`. 4) The pod does not have CPU resource requests set — HPA calculates utilization as (current usage / request); without requests, it cannot compute a ratio. 5) The cooldown period has not elapsed since the last scale event. Fix: ensure metrics-server is running, set CPU requests on pods, and verify `kubectl get hpa` shows current/target metrics correctly.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is the difference between Horizontal Pod Autoscaler (HPA) and Vertical Pod Autoscaler (VPA)? Can you run both simultaneously?",
+          answer: "HPA scales the number of pod replicas based on metrics (CPU, memory, custom). VPA adjusts the resource requests/limits of individual pods based on observed usage, resizing containers to right-size them. They address different dimensions: HPA handles traffic load, VPA handles resource efficiency. Running both on CPU simultaneously is problematic — they can conflict (VPA increases requests, which changes HPA's utilization calculation, causing oscillation). The recommended pattern: use VPA in recommendation mode to determine correct resource requests, set those values manually, then use HPA for runtime scaling. Or use VPA only for non-horizontally-scalable workloads (like databases) and HPA for stateless services.",
+          difficulty: "senior",
+        },
+        {
+          question: "Explain how RBAC works in Kubernetes. What are the four main RBAC objects and how do they relate to each other?",
+          answer: "RBAC (Role-Based Access Control) controls who can do what in the cluster. The four objects: 1) Role — defines a set of permissions (verbs like get/list/create on resources like pods/secrets) within a specific namespace. 2) ClusterRole — same as Role but cluster-wide, covering non-namespaced resources (nodes, PVs) or used across namespaces. 3) RoleBinding — binds a Role or ClusterRole to subjects (users, groups, ServiceAccounts) within a namespace — grants the permissions for that namespace only. 4) ClusterRoleBinding — binds a ClusterRole to subjects cluster-wide. Example: to give a CI service account permission to deploy to the `production` namespace only, create a Role with deployment update permissions + a RoleBinding in `production` binding to the CI ServiceAccount.",
+          difficulty: "mid",
+        },
+        {
+          question: "A pod running in your cluster should only need to read ConfigMaps in its namespace, not create or delete them. How do you implement least-privilege access for this pod?",
+          answer: "1) Create a dedicated ServiceAccount: `kubectl create serviceaccount config-reader -n production`. 2) Create a Role with only the needed permissions: `apiGroups: [''], resources: ['configmaps'], verbs: ['get', 'list', 'watch']`. 3) Create a RoleBinding linking the Role to the ServiceAccount in the same namespace. 4) Set the pod's `spec.serviceAccountName: config-reader`. The pod will mount the ServiceAccount token, which the API server validates against RBAC rules. Avoid using the `default` ServiceAccount for anything sensitive — in many clusters it has broad permissions. Also set `automountServiceAccountToken: false` on pods that do not need API access at all.",
+          difficulty: "mid",
+        },
+        {
+          question: "What is Pod Security Admission (PSA) and how does it replace PodSecurityPolicy? Describe the three enforcement levels.",
+          answer: "PSA is the built-in Kubernetes mechanism (stable since 1.25) that replaced the deprecated PodSecurityPolicy. It enforces security profiles at the namespace level via labels. Three standard profiles: 1) `privileged` — no restrictions, same as no policy. 2) `baseline` — prevents the most dangerous capabilities (hostPID, hostNetwork, privileged containers, dangerous capabilities like SYS_ADMIN) while allowing most workloads. 3) `restricted` — heavily restricted following current hardening best practices (requires non-root user, drops all capabilities, disallows privilege escalation, requires seccomp). Three enforcement modes per profile: `enforce` (reject violating pods), `audit` (allow but log), `warn` (allow but warn). Label example: `pod-security.kubernetes.io/enforce: baseline`.",
+          difficulty: "senior",
+        },
+        {
+          question: "What is GitOps and how does ArgoCD implement it? What is the reconciliation loop?",
+          answer: "GitOps is a practice where the desired state of infrastructure and applications is declared in a Git repository, and an automated operator continuously ensures the live cluster matches that desired state. ArgoCD implements GitOps by: 1) Watching a Git repository (polling or webhook) for changes to Kubernetes manifests (raw YAML, Helm charts, Kustomize). 2) Comparing the desired state in git with the live state in the cluster. 3) When drift is detected, ArgoCD syncs — applies the git state to the cluster. The reconciliation loop runs continuously (every ~3 minutes by default or on git push). With `selfHeal: true`, any manual change to the cluster is automatically reverted to match git — git becomes the single source of truth.",
+          difficulty: "mid",
+        },
+        {
+          question: "A developer did `kubectl edit deployment payments-api` directly in production to hotfix a critical bug. ArgoCD is configured with auto-sync and selfHeal. What happens?",
+          answer: "ArgoCD will detect drift between the live Deployment (manual edit) and the desired state in git, then automatically revert the manual change by reapplying the git state — overwriting the hotfix. The developer's change will be lost within minutes. The correct GitOps workflow is: 1) Disable auto-sync temporarily (`argocd app set payments-api --sync-policy none`) or use an ArgoCD sync window. 2) Commit the fix to git (proper PR review). 3) ArgoCD syncs the git change. This enforces auditability — every change has a git commit, PR, and review trail. Emergency hotfixes should still go through git, possibly with an expedited review process.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your cluster has pods running as root with host network access. A security audit flags this. What steps do you take to harden pod security?",
+          answer: "1) Audit current posture: `kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.spec.securityContext}{\"\\n\"}{end}'` and check for `hostNetwork: true`, `privileged: true`, `runAsUser: 0`. 2) Add Pod Security Admission labels to namespaces — start with `warn` and `audit` modes to identify violations without breaking things. 3) Update pod specs: set `securityContext.runAsNonRoot: true`, `runAsUser: 1000`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true`. 4) Remove `hostNetwork`, `hostPID`, `hostIPC` unless absolutely required (only for node-level agents like CNI plugins). 5) Enforce the `baseline` or `restricted` PSA profile once pods are compliant.",
+          difficulty: "senior",
+        },
+        {
+          question: "Explain what happens during an ArgoCD sync when a Helm chart upgrade includes a breaking schema change to a CRD. What safeguards should be in place?",
+          answer: "CRD upgrades are risky — Kubernetes validates existing custom resources against the new schema after the CRD is updated. If existing resources violate the new schema, they may become invalid (though Kubernetes does not delete them). Safeguards: 1) Use ArgoCD sync phases and waves — annotate the CRD with `argocd.argoproj.io/sync-wave: '-1'` so it applies before dependent resources. 2) Use ArgoCD `Replace=true` sync option for CRDs (kubectl apply cannot always update CRD schemas). 3) Test in staging first — apply the chart upgrade to a staging cluster before production. 4) Check ArgoCD's app health after sync — it will show Degraded if resources fail to apply. 5) Have a rollback plan: `helm rollback` or revert the git commit and let ArgoCD re-sync.",
+          difficulty: "senior",
+        },
+        {
+          question: "How does Cluster Autoscaler work and what is the difference between it and HPA? What prevents it from scaling down a node?",
+          answer: "HPA scales pod replicas based on resource metrics — it operates at the workload level. Cluster Autoscaler (CA) scales the number of nodes in a node group based on scheduling pressure — it operates at the infrastructure level. When pods are Pending because no node has enough capacity, CA provisions a new node. When nodes are underutilized and all pods can fit on fewer nodes, CA removes nodes. CA will NOT scale down a node if: 1) A pod on the node has a PodDisruptionBudget that would be violated. 2) A pod uses local storage (hostPath, emptyDir with data). 3) A pod has the annotation `cluster-autoscaler.kubernetes.io/safe-to-evict: 'false'`. 4) A node has the annotation `cluster-autoscaler.kubernetes.io/scale-down-disabled: 'true'`. 5) The node has been recently added (scale-down delay).",
+          difficulty: "senior",
         },
       ],
     },

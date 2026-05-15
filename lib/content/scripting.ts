@@ -662,6 +662,58 @@ Safe usage patterns:
           ],
         },
       ],
+      exam: [
+        {
+          question: "You need to search all .log files under /var/log recursively for lines containing 'CRITICAL' or 'FATAL', but the directory has thousands of files and you want the fastest possible result. What command do you use?",
+          answer: "grep -r -E 'CRITICAL|FATAL' /var/log --include='*.log'. The -E flag enables extended regex for alternation. grep -r handles recursion natively without needing find | xargs. For even faster results on large trees, use ripgrep (rg 'CRITICAL|FATAL' /var/log) which uses multiple threads by default.",
+          difficulty: "junior",
+        },
+        {
+          question: "You run 'find /var/log -name *.log | xargs grep ERROR' but it fails with 'Argument list too long' or breaks on filenames with spaces. How do you fix both problems?",
+          answer: "Use find -print0 and xargs -0: find /var/log -name '*.log' -print0 | xargs -0 grep ERROR. The -print0 flag outputs null-separated filenames and xargs -0 reads them, safely handling filenames with spaces, tabs, or special characters. This also avoids the 'Argument list too long' issue because xargs automatically batches arguments.",
+          difficulty: "mid",
+        },
+        {
+          question: "You have a CSV file where the third column is a response time in milliseconds. Write a one-liner to calculate the average response time across all rows.",
+          answer: "awk -F',' '{sum += $3; count++} END {print sum/count}' responses.csv. awk -F',' sets the field separator to comma. The main block accumulates sum and count for each row. The END block divides after all rows are processed. For more precision: awk -F',' '{sum += $3; count++} END {printf \"%.2f\\n\", sum/count}'.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to replace every occurrence of 'http://old-api.internal' with 'https://new-api.example.com' across 50 YAML config files in place. What sed command does this safely?",
+          answer: "sed -i 's|http://old-api.internal|https://new-api.example.com|g' *.yaml. Use | as the delimiter instead of / because the URLs contain slashes, which would require escaping. On macOS, sed -i requires an empty string argument: sed -i '' 's|...|...|g' *.yaml. Always run without -i first and verify output before editing in place.",
+          difficulty: "junior",
+        },
+        {
+          question: "You want to find all files larger than 100MB under /data, print their sizes in human-readable format, and sort them largest first. Write the pipeline.",
+          answer: "find /data -type f -size +100M -exec du -sh {} + | sort -rh. The find command locates files over 100MB, -exec du -sh {} + runs du on batches of files for human-readable sizes, and sort -rh sorts in reverse human-readable order (recognising K, M, G suffixes). Alternative: find /data -type f -size +100M -printf '%s\\t%p\\n' | sort -rn | awk '{printf \"%.0fMB\\t%s\\n\", $1/1024/1024, $2}'.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your CI pipeline downloads a JSON response from an API and needs to extract all 'id' fields from a nested array at '.data.items[].id'. Write the jq command.",
+          answer: "curl -s https://api.example.com/items | jq -r '.data.items[].id'. The -r flag outputs raw strings without JSON quoting, which is important when piping IDs to other commands. To handle null values safely: jq -r '.data.items[] | .id // empty'. To get a comma-separated list: jq -r '[.data.items[].id] | join(\",\")'.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to archive the /opt/app directory to S3, but want to stream the tar output directly to an S3 bucket without writing a local file. How do you do this?",
+          answer: "tar -czf - /opt/app | aws s3 cp - s3://my-bucket/backups/app-$(date +%Y%m%d).tar.gz. The -f - tells tar to write to stdout instead of a file. aws s3 cp reads from stdin when the source is -. This avoids needing local disk space equal to the archive size, which is critical on servers with limited storage.",
+          difficulty: "senior",
+        },
+        {
+          question: "You need to use rsync to deploy a web app to 10 servers listed in servers.txt, running the transfers in parallel (4 at a time). Write the shell pipeline.",
+          answer: "cat servers.txt | xargs -P4 -I{} rsync -avz --delete ./dist/ {}:/var/www/html/. xargs -P4 runs 4 rsync processes concurrently. -I{} substitutes each server hostname into the command. Alternatively: while read server; do rsync -avz ./dist/ $server:/var/www/html/ & done < servers.txt; wait — but xargs -P gives better control over concurrency.",
+          difficulty: "senior",
+        },
+        {
+          question: "A log file has lines like '2024-01-15 ERROR user_id=1234 message=Login failed'. You need to extract all unique user_ids that had errors. Write the pipeline.",
+          answer: "grep 'ERROR' app.log | grep -oP 'user_id=\\K[0-9]+' | sort -u. grep -oP with \\K (Perl-compatible lookbehind reset) prints only the number after 'user_id='. sort -u sorts and removes duplicates. Alternative with awk: awk '/ERROR/ {match($0, /user_id=([0-9]+)/, a); if (a[1]) print a[1]}' app.log | sort -u.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to curl a REST API endpoint that returns a JWT token, then use that token in a second curl request to a protected endpoint. Write the two-step pipeline as a single shell expression.",
+          answer: "TOKEN=$(curl -s -X POST https://api.example.com/auth -d '{\"user\":\"admin\",\"pass\":\"secret\"}' -H 'Content-Type: application/json' | jq -r '.token') && curl -s -H \"Authorization: Bearer $TOKEN\" https://api.example.com/protected/data. The $() captures the token from the first curl via jq, and && ensures the second request only runs if the first succeeds.",
+          difficulty: "mid",
+        },
+      ],
     },
 
     // ─────────────────────────────────────────────────────────────
@@ -1555,6 +1607,58 @@ This gives an absolute path to the directory containing the script, regardless o
               hint: "Use & to background each command and capture \$! immediately after each one. Use wait <pid> to get the exit code of a specific background process.",
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "Your Bash script sources a config file with 'source config.env', but config.env has a syntax error. With 'set -e' enabled, what happens and how do you handle it safely?",
+          answer: "With set -e, a syntax error in sourced file causes the script to exit immediately at the source line. To handle safely: use 'if ! source config.env; then echo \"Failed to load config\" >&2; exit 1; fi' — the if statement prevents -e from triggering automatically and lets you emit a helpful error. Alternatively, validate with bash -n config.env before sourcing.",
+          difficulty: "mid",
+        },
+        {
+          question: "You write a function 'deploy()' that creates a temp dir and runs several commands. If any command fails, the temp dir must be cleaned up. How do you implement this robustly?",
+          answer: "Register a trap inside the function scope using a local cleanup function: deploy() { local TMPDIR; TMPDIR=$(mktemp -d); cleanup() { rm -rf \"$TMPDIR\"; }; trap cleanup RETURN ERR; ... commands ... }. Trapping on both RETURN and ERR ensures cleanup runs whether the function returns normally or on error. Use 'local' for TMPDIR so it doesn't pollute the global scope.",
+          difficulty: "senior",
+        },
+        {
+          question: "Your script uses 'set -o pipefail' but you have a pipeline 'cmd | tee output.log | grep pattern' where you want the script to fail if 'cmd' fails, but 'grep' finding no matches (exit 1) should not fail the script. How do you handle this?",
+          answer: "Use 'cmd | tee output.log | grep pattern || true'. The '|| true' prevents grep's non-zero exit from triggering pipefail. For more granular control: { cmd | tee output.log; } | { grep pattern || true; }. If you need to check whether grep found matches separately, capture the output: output=$(cmd | tee output.log); echo \"$output\" | grep pattern || echo 'No matches'.",
+          difficulty: "senior",
+        },
+        {
+          question: "You have an array of server names and need to deploy to all of them in parallel, collecting which ones failed. Write the Bash logic.",
+          answer: "SERVERS=(web1 web2 web3 db1); FAILED=(); for server in \"${SERVERS[@]}\"; do (deploy_to \"$server\" || echo \"$server\" >> /tmp/failed_$$) & done; wait; if [[ -f /tmp/failed_$$ ]]; then mapfile -t FAILED < /tmp/failed_$$; rm /tmp/failed_$$; echo \"Failed: ${FAILED[*]}\"; fi. Using a temp file with the PID ($$ ) avoids race conditions when multiple background processes write failures.",
+          difficulty: "senior",
+        },
+        {
+          question: "Your script accepts a --env flag that should only accept 'dev', 'staging', or 'prod'. Write the argument parsing and validation logic in Bash.",
+          answer: "ENV=''; while [[ $# -gt 0 ]]; do case $1 in --env) ENV=\"$2\"; shift 2 ;; *) echo \"Unknown arg: $1\" >&2; exit 1 ;; esac; done; if [[ ! \"$ENV\" =~ ^(dev|staging|prod)$ ]]; then echo \"--env must be dev, staging, or prod\" >&2; exit 1; fi. The =~ operator with a regex in [[ ]] performs the validation without needing case statements or external tools.",
+          difficulty: "mid",
+        },
+        {
+          question: "A Bash script must create a lock file to prevent concurrent execution. If another instance is running, it should print a message and exit. Implement this with proper cleanup.",
+          answer: "LOCKFILE=/var/run/myscript.lock; cleanup() { rm -f \"$LOCKFILE\"; }; trap cleanup EXIT; if ! (set -C; echo $$ > \"$LOCKFILE\") 2>/dev/null; then echo \"Already running (PID $(cat $LOCKFILE))\" >&2; exit 1; fi. The 'set -C' (noclobber) makes the redirect fail if the file exists, providing atomic lock creation. Trapping EXIT removes the lock when the script ends for any reason.",
+          difficulty: "senior",
+        },
+        {
+          question: "You need to retry a flaky command up to 5 times with a 10-second delay between attempts. Write a reusable Bash function for this.",
+          answer: "retry() { local max=$1 delay=$2; shift 2; local attempt=1; while (( attempt <= max )); do \"$@\" && return 0; echo \"Attempt $attempt/$max failed. Retrying in ${delay}s...\" >&2; (( attempt++ )); sleep \"$delay\"; done; echo \"All $max attempts failed\" >&2; return 1; }; retry 5 10 curl -f https://api.example.com/health. The function receives max retries, delay, and the command as arguments.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your heredoc writes a Kubernetes YAML template to a file, but you need some variables expanded (APP_NAME, VERSION) while others are literal (${POD_IP}, ${NODE_NAME} for the container env). How do you handle this?",
+          answer: "Use two separate heredocs or escape the literal variables. In a single heredoc with expansion (<<EOF), prefix literal variables with a backslash: \\${POD_IP}. Alternatively, write the literal-variable sections as separate strings or use a quoted heredoc (<<'EOF') for sections that need no expansion and concatenate. The cleanest approach: use envsubst or a templating tool (gomplate, Helm) which clearly separates template variables from runtime env vars.",
+          difficulty: "mid",
+        },
+        {
+          question: "A script processes files with names like 'my report (2024).csv'. When you loop with 'for file in $(ls *.csv)', files with spaces break. What is the correct approach?",
+          answer: "Never use $(ls) for file iteration. Use a glob directly: for file in *.csv; do echo \"$file\"; done. The glob expansion in Bash handles filenames with spaces correctly as long as the variable is double-quoted. For find: find . -name '*.csv' -print0 | while IFS= read -r -d '' file; do echo \"$file\"; done. The -d '' combined with read -r handles null-delimited filenames.",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to write a Bash script that reads deployment status from an API every 10 seconds and exits when status is 'complete' or after a 5-minute timeout. Implement this.",
+          answer: "TIMEOUT=300; START=$(date +%s); while true; do STATUS=$(curl -s https://api/deploy/status | jq -r '.status'); [[ \"$STATUS\" == 'complete' ]] && { echo 'Deployment complete'; exit 0; }; ELAPSED=$(( $(date +%s) - START )); (( ELAPSED >= TIMEOUT )) && { echo 'Timeout after 5 minutes' >&2; exit 1; }; echo \"Status: $STATUS (${ELAPSED}s elapsed)\"; sleep 10; done. Uses epoch timestamps for timeout calculation to avoid drift from sleep imprecision.",
+          difficulty: "mid",
         },
       ],
     },
@@ -2515,6 +2619,58 @@ Best practice for DevOps tools: always wrap errors with context using %w and use
               hint: "Use sync.WaitGroup to wait for all goroutines. Pass the URL as a function argument (not a closure over the loop variable) to avoid the loop variable capture bug.",
             },
           ],
+        },
+      ],
+      exam: [
+        {
+          question: "You need a Python script that checks the health of 20 microservice endpoints concurrently and prints a summary. Using sequential requests takes 30 seconds. How do you speed this up?",
+          answer: "Use concurrent.futures.ThreadPoolExecutor: from concurrent.futures import ThreadPoolExecutor, as_completed; import requests; urls = [...]; def check(url): resp = requests.get(url, timeout=5); return url, resp.status_code; with ThreadPoolExecutor(max_workers=10) as ex: futures = {ex.submit(check, u): u for u in urls}; for f in as_completed(futures): url, code = f.result(); print(f'{url}: {code}'. For I/O-bound tasks like HTTP requests, threading works well without needing asyncio.",
+          difficulty: "mid",
+        },
+        {
+          question: "Your Python deployment script calls subprocess.run('docker build -t myapp:latest .', shell=True). A colleague says this is a security risk. Why, and how do you fix it?",
+          answer: "shell=True passes the command string to /bin/sh, enabling shell injection if any part of the command comes from user input or environment variables. Even without injection risk, shell=True is fragile due to quoting and shell differences. Fix: use a list of arguments without shell=True: subprocess.run(['docker', 'build', '-t', 'myapp:latest', '.'], check=True). This passes arguments directly to the OS without shell interpretation.",
+          difficulty: "mid",
+        },
+        {
+          question: "You write a Python script with boto3 to tag all untagged EC2 instances. It works in dev but throws 'EndpointResolutionError' in production. What are the two most likely causes?",
+          answer: "1. Wrong AWS region: the production instances may be in a different region than your default. Fix: explicitly set the region in boto3.client('ec2', region_name='us-east-1') or ensure AWS_DEFAULT_REGION is set. 2. Network connectivity: the production environment may not have internet access or VPC endpoints for the EC2 API. Fix: configure a VPC endpoint for EC2 or ensure the security group/NAT gateway allows outbound HTTPS to ec2.amazonaws.com.",
+          difficulty: "senior",
+        },
+        {
+          question: "Your Go CLI tool needs to read AWS credentials from environment variables for CI, but fall back to ~/.aws/credentials for local development. How does the AWS SDK for Go handle this, and how do you implement it?",
+          answer: "The AWS SDK for Go uses a credential chain that automatically checks: environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) first, then ~/.aws/credentials, then IAM instance profile/ECS task role. Use the default credential provider: cfg, err := config.LoadDefaultConfig(context.TODO()); svc := ec2.NewFromConfig(cfg). No manual credential logic needed — the SDK handles the chain. For explicit control, use config.LoadDefaultConfig with custom credential providers.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need a Python script that watches a directory for new JSON files, parses each one, and POSTs its contents to an API. How do you implement the file watching without polling in a busy loop?",
+          answer: "Use the watchdog library: from watchdog.observers import Observer; from watchdog.events import FileSystemEventHandler; class Handler(FileSystemEventHandler): def on_created(self, event): if event.src_path.endswith('.json'): data = json.loads(Path(event.src_path).read_text()); requests.post(API_URL, json=data); observer = Observer(); observer.schedule(Handler(), path='/watch/dir', recursive=False); observer.start(). watchdog uses OS-level file system events (inotify on Linux, FSEvents on macOS) instead of polling.",
+          difficulty: "mid",
+        },
+        {
+          question: "A Go tool that deploys to 50 servers panics occasionally with 'concurrent map writes'. You use a map to track deployment results from goroutines. How do you fix this?",
+          answer: "Maps in Go are not goroutine-safe. Fix options: 1. Use sync.Mutex: var mu sync.Mutex; mu.Lock(); results[server] = status; mu.Unlock(). 2. Use sync.Map for concurrent access without explicit locking: var results sync.Map; results.Store(server, status). 3. Use a channel to collect results into a single goroutine that writes to the map: resultsCh <- Result{server, status}; in a separate goroutine: for r := range resultsCh { results[r.server] = r.status }. The channel pattern is often the most idiomatic Go approach.",
+          difficulty: "senior",
+        },
+        {
+          question: "Your Python script uses 'import yaml; config = yaml.load(open(\"config.yaml\"))' and works, but you get a security warning. What is the issue and how do you fix it?",
+          answer: "yaml.load() with the default Loader can deserialize arbitrary Python objects, enabling code execution if the YAML file is untrusted (e.g., user-supplied). Fix: always use yaml.safe_load() which only loads standard YAML types (strings, numbers, lists, dicts) without executing Python code: config = yaml.safe_load(open('config.yaml')). For writing, use yaml.dump() which is always safe. The full safe pattern: with open('config.yaml') as f: config = yaml.safe_load(f).",
+          difficulty: "junior",
+        },
+        {
+          question: "You need to build a Go binary that works on both Linux/amd64 (production servers) and macOS/arm64 (developer machines). How do you set up the build and what Makefile targets would you write?",
+          answer: "Go supports cross-compilation with GOOS and GOARCH environment variables. Makefile targets: build-linux: GOOS=linux GOARCH=amd64 go build -o dist/tool-linux-amd64 ./cmd/tool; build-mac: GOOS=darwin GOARCH=arm64 go build -o dist/tool-darwin-arm64 ./cmd/tool; build-all: build-linux build-mac. For CI: build all targets in one job and upload artifacts. Add -ldflags='-s -w' to strip debug info and reduce binary size. Use goreleaser for production release management.",
+          difficulty: "junior",
+        },
+        {
+          question: "Your Python boto3 script lists S3 objects but only returns 1000 items even though the bucket has 50,000 objects. How do you retrieve all objects?",
+          answer: "S3's list_objects_v2 is paginated with a max of 1000 objects per request. Use the paginator: paginator = s3.get_paginator('list_objects_v2'); pages = paginator.paginate(Bucket='my-bucket', Prefix='logs/'); all_objects = [obj for page in pages for obj in page.get('Contents', [])]. Alternatively, manually handle ContinuationToken: response = s3.list_objects_v2(Bucket='my-bucket'); while response.get('IsTruncated'): response = s3.list_objects_v2(Bucket='my-bucket', ContinuationToken=response['NextContinuationToken']). The paginator approach is cleaner and recommended.",
+          difficulty: "mid",
+        },
+        {
+          question: "You need to write a Go function that retries an HTTP request up to 3 times with exponential backoff, only retrying on 5xx errors or network failures. Describe the implementation.",
+          answer: "func requestWithRetry(url string, maxRetries int) (*http.Response, error) { backoff := time.Second; for i := 0; i <= maxRetries; i++ { resp, err := http.Get(url); if err == nil && resp.StatusCode < 500 { return resp, nil }; if i < maxRetries { time.Sleep(backoff); backoff *= 2 }; }; return nil, fmt.Errorf('all retries failed') }. Key points: exponential backoff (double the wait each attempt), only retry on 5xx (server errors) not 4xx (client errors which won't improve on retry), add jitter in production (backoff += time.Duration(rand.Intn(1000)) * time.Millisecond) to prevent thundering herd.",
+          difficulty: "senior",
         },
       ],
     },
