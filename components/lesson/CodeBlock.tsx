@@ -2,20 +2,22 @@
 
 import React, { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 
 interface CodeBlockProps {
   code: string;
   language?: string;
   filename?: string;
+  showLineNumbers?: boolean;
 }
 
-export function CodeBlock({ code, language = "bash", filename }: CodeBlockProps) {
+export function CodeBlock({ code, language = "bash", filename, showLineNumbers }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  const trimmed = code.trim();
+  const lines = trimmed.split("\n");
+  const numbered = showLineNumbers ?? lines.length > 5;
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(code);
+    await navigator.clipboard.writeText(trimmed);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -26,9 +28,7 @@ export function CodeBlock({ code, language = "bash", filename }: CodeBlockProps)
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/80 border-b border-zinc-800">
         <div className="flex items-center gap-2">
           <Terminal className="h-3.5 w-3.5 text-zinc-500" />
-          <span className="text-xs text-zinc-500 font-mono">
-            {filename || language}
-          </span>
+          <span className="text-xs text-zinc-500 font-mono">{filename || language}</span>
         </div>
         <button
           onClick={handleCopy}
@@ -49,21 +49,25 @@ export function CodeBlock({ code, language = "bash", filename }: CodeBlockProps)
       </div>
 
       {/* Code */}
-      <SyntaxHighlighter
-        language={language}
-        style={oneDark}
-        customStyle={{
-          margin: 0,
-          padding: "1rem",
-          background: "transparent",
-          fontSize: "0.8125rem",
-          lineHeight: "1.6",
-        }}
-        showLineNumbers={code.split("\n").length > 5}
-        lineNumberStyle={{ color: "#3f3f46", minWidth: "2rem", paddingRight: "1rem" }}
+      <pre
+        className="overflow-x-auto p-4 text-[0.8125rem] leading-relaxed font-mono"
+        style={{ background: "transparent", color: "#d4d4d8" }}
       >
-        {code.trim()}
-      </SyntaxHighlighter>
+        {numbered ? (
+          <code>
+            {lines.map((line, i) => (
+              <span key={i} className="table-row">
+                <span className="table-cell pr-4 select-none text-right min-w-[2rem]" style={{ color: "#52525b" }}>
+                  {i + 1}
+                </span>
+                <span className="table-cell">{line}</span>
+              </span>
+            ))}
+          </code>
+        ) : (
+          <code>{trimmed}</code>
+        )}
+      </pre>
     </div>
   );
 }

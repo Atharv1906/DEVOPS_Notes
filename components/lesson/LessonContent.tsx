@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { Check, Copy, Terminal, Info, Lightbulb, AlertTriangle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -61,15 +59,20 @@ function parseMarkdown(content: string): React.ReactNode {
             </div>
             <CopyButton code={code} />
           </div>
-          <SyntaxHighlighter
-            language={lang === "text" ? "bash" : lang}
-            style={oneDark}
-            customStyle={{ margin: 0, padding: "1rem 1.25rem", background: "transparent", fontSize: "0.8125rem", lineHeight: "1.7" }}
-            showLineNumbers={codeLines.length > 6}
-            lineNumberStyle={{ color: "#3f3f46", minWidth: "2.5rem", paddingRight: "1rem", userSelect: "none" }}
-          >
-            {code}
-          </SyntaxHighlighter>
+          <pre className="overflow-x-auto text-[0.8125rem] leading-[1.7] font-mono" style={{ margin: 0, padding: "1rem 1.25rem", background: "transparent", color: "#d4d4d8" }}>
+            {codeLines.length > 6 ? (
+              <code>
+                {codeLines.map((line, idx) => (
+                  <span key={idx} className="table-row">
+                    <span className="table-cell pr-4 select-none text-right min-w-[2.5rem]" style={{ color: "#52525b" }}>{idx + 1}</span>
+                    <span className="table-cell">{line}</span>
+                  </span>
+                ))}
+              </code>
+            ) : (
+              <code>{code}</code>
+            )}
+          </pre>
         </div>
       );
       continue;
@@ -101,7 +104,7 @@ function parseMarkdown(content: string): React.ReactNode {
       const cleanText = text
         .replace(/\*\*(Note|Tip|Pro tip|Warning|Danger|DANGER):\*\*/g, "")
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/`([^`]+)`/g, `<code class="bg-zinc-800 px-1 py-0.5 rounded text-orange-400 text-xs">$1</code>`)
+        .replace(/`([^`]+)`/g, `<code class="bg-zinc-800 px-1 py-0.5 rounded text-zinc-200 text-xs">$1</code>`)
         .trim();
 
       elements.push(
@@ -268,7 +271,7 @@ function inlineFormat(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-zinc-200">$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em class="italic text-zinc-300">$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="bg-zinc-800 border border-zinc-700/50 px-1.5 py-0.5 rounded text-orange-300 text-xs font-mono">$1</code>')
+    .replace(/`([^`]+)`/g, '<code class="bg-zinc-800 border border-zinc-700/50 px-1.5 py-0.5 rounded text-zinc-200 text-xs font-mono">$1</code>')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:text-blue-300 underline underline-offset-2" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 

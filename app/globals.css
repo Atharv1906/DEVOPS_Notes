@@ -38,6 +38,20 @@ html.light {
   --color-zinc-200: #27272a;
   --color-zinc-100: #18181b;
   --color-zinc-50: #09090b;
+  /* Make text-white adapt so headings/labels on light backgrounds become dark */
+  --color-white: #09090b;
+}
+
+/* Preserve white text inside elements that have a colored background */
+html.light [class*="from-blue"],
+html.light [class*="from-violet"],
+html.light [class*="bg-blue"],
+html.light [class*="bg-violet"],
+html.light [class*="bg-red"],
+html.light [class*="bg-green"],
+html.light [class*="bg-amber"],
+html.light [class*="bg-gradient"] {
+  --color-white: #ffffff;
 }
 
 * {
@@ -137,11 +151,8 @@ html.light .prose code:not(pre code) {
   border: 1px solid #cbd5e1;
 }
 
-/* Inline code rendered via dangerouslySetInnerHTML in LessonContent uses hardcoded
-   orange classes — override text/bg for readability on the light background */
-html.light code.text-orange-300,
-html.light code.text-orange-400 {
-  color: #c2410c !important;
+/* Inline code rendered via dangerouslySetInnerHTML — fix background in light mode */
+html.light code.text-zinc-200 {
   background-color: #e2e8f0 !important;
   border-color: #cbd5e1 !important;
 }
