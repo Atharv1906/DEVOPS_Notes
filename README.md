@@ -160,6 +160,32 @@ docker stop devops-lms
 
 ---
 
+## Building using Docker Compose (Self Hosting)
+## Docker Compose
+
+```bash
+docker compose up -d
+```
+
+Example compose file:
+
+```yaml
+services:
+  improving-everyday:
+    image: ghcr.io/sooraj-sky/improving-everyday:latest
+    container_name: devops-local-book
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+
+    restart: unless-stopped
+```
+
 ## Building for Production (without Docker)
 
 If you want to run the optimised production build directly with Node.js:
