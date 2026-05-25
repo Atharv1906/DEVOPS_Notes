@@ -259,3 +259,5 @@ Docker Desktop is not running. Open it from your Applications folder (Mac) or St
 
 **Changes I make to the code don't appear**
 Make sure the development server (`npm run dev`) is running. If it is, try refreshing the browser. If the issue persists, stop the server with `Ctrl + C` and start it again.
+#   D E V O P S _ N o t e s  
+ 
