@@ -1,263 +1,280 @@
-# DevOps Learn
+# DevOps LMS
 
-A modern, self-paced learning platform for DevOps engineers. 20 structured tracks covering Linux, cloud, containers, CI/CD, security, and more — all running locally in the browser with no backend required.
+A production-style DevOps learning platform built with Next.js and TypeScript.
 
----
+This project provides structured tracks, modules, and lessons for modern engineering topics (Linux, Git, CI/CD, Docker, Terraform, AWS, Kubernetes, DevSecOps, and more) with profile-based progress tracking, lesson notes, tasks, and in-app search.
 
-## Features
+## Table of Contents
 
-- **20 learning tracks** organized from beginner to advanced, with modules and individual lessons
-- **Progress tracking** — lesson completion state saved automatically per profile
-- **Profile system** — create multiple learner profiles, each with their own progress
-- **Module exams** — quiz-style assessments at the end of each module
-- **Notes** — attach personal notes to any lesson
-- **Full-text search** — search across all 20 tracks, modules, and lessons instantly
-- **Light / Dark mode** — toggle between themes from the top nav bar
-- **Lesson navigation** — prev/next lesson links within a track, breadcrumb navigation
-- **No backend required** — all data is stored in your browser (localStorage)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Run with Docker](#run-with-docker)
+- [Database and Prisma](#database-and-prisma)
+- [Available Scripts](#available-scripts)
+- [How Content Is Organized](#how-content-is-organized)
+- [Screenshots](#screenshots)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap Ideas](#roadmap-ideas)
+- [Contributing](#contributing)
 
----
+## Overview
 
-## Learning Tracks
+DevOps LMS is designed as a focused self-learning experience:
 
-| # | Track | Level | Topics |
-|---|-------|-------|--------|
-| 01 | **Linux** | Beginner → Advanced | File system, permissions, process management, shell scripting, security hardening |
-| 02 | **Linux Networking** | Beginner → Advanced | TCP/IP, DNS, firewalls, network troubleshooting, VPNs |
-| 03 | **Scripting & Automation** | Beginner → Intermediate | Bash scripting, cron, automation patterns |
-| 04 | **SSH & Network Protocols** | Beginner → Intermediate | SSH keys, tunneling, port forwarding, SCP/SFTP |
-| 05 | **Git** | Beginner → Advanced | Branching, merging, rebasing, hooks, workflows |
-| 06 | **GitHub Actions** | Beginner → Advanced | Workflows, runners, secrets, matrix builds, reusable workflows |
-| 07 | **GitLab CI/CD** | Beginner → Advanced | Pipelines, runners, templates, environments, Container Registry, security scanning |
-| 08 | **Python** | Beginner → Advanced | Core Python, scripting, automation, APIs, testing |
-| 09 | **Docker** | Beginner → Advanced | Images, containers, volumes, networking, Docker Compose, security |
-| 10 | **Databases** | Beginner → Intermediate | SQL, PostgreSQL, Redis, backups, connection pooling |
-| 11 | **Web Technology** | Beginner → Intermediate | HTTP, TLS, reverse proxies, load balancing, CDNs |
-| 12 | **SDLC** | Beginner → Intermediate | Agile, Scrum, Kanban, release management, SLOs |
-| 13 | **Go Programming** | Beginner → Intermediate | Go fundamentals, concurrency, CLI tools, Docker/Kubernetes SDKs |
-| 14 | **Terraform** | Beginner → Advanced | HCL, providers, modules, workspaces, remote state, advanced patterns |
-| 15 | **AWS** | Beginner → Advanced | EC2, S3, VPC, IAM, RDS, EKS, Lambda, CloudFormation |
-| 16 | **Kubernetes** | Intermediate → Advanced | Pods, deployments, services, ingress, RBAC, Helm, operators |
-| 17 | **DevSecOps** | Intermediate → Advanced | Threat modeling, SAST/DAST, secret scanning, supply chain security |
-| 18 | **Troubleshooting** | Intermediate → Advanced | Systematic debugging, observability, incident response, postmortems |
-| 19 | **Compliance** | Intermediate → Advanced | SOC 2, ISO 27001, GDPR, audit trails, policy as code |
-| 20 | **Prompt Engineering** | Beginner → Advanced | LLM fundamentals, prompt patterns, AI-assisted DevOps workflows |
+- 20 curated tracks from beginner to advanced topics.
+- Lesson-first learning with module grouping and exams.
+- Multi-profile learning context.
+- Search API for quickly finding lessons.
+- Fast local development and portable production deployment.
 
----
+The app currently uses browser storage for user-facing progress and notes state, while Prisma schema and generated client are included for persistent backend-ready expansion.
 
-## Screenshots
+## Key Features
 
-### Dashboard
-![Dashboard](public/screenshots/dashboard.png)
+- 20 learning tracks across DevOps and software engineering domains.
+- Track and lesson progression per profile.
+- Module-level lesson flow with previous/next navigation.
+- Notes support per lesson.
+- Search endpoint for lesson discovery.
+- Responsive UI with reusable component primitives.
+- Theme support and polished dashboard UX.
 
-### Track Page
-![Track Page](public/screenshots/track.png)
+## Tech Stack
 
-### Lesson Viewer
-![Lesson Viewer](public/screenshots/lesson.png)
+- Next.js 16 (App Router)
+- React 19
+- TypeScript 5
+- Tailwind CSS 4
+- Prisma 6 (schema + client generation)
+- SQLite (configured datasource)
+- Radix UI primitives
+- Framer Motion
+- ESLint 9
 
----
+## Project Structure
 
-## Running Locally
-
-### What you need first
-
-Before you start, make sure you have the following installed on your computer:
-
-- **Node.js v18 or higher** — download from [nodejs.org](https://nodejs.org). Choose the "LTS" version if you're unsure.
-  - To check if you already have it: open a terminal and run `node -v`
-- **Git** — download from [git-scm.com](https://git-scm.com)
-  - To check if you already have it: run `git --version`
-
-### Step-by-step setup
-
-**1. Clone the repository**
-
-This downloads the project code to your computer.
-
-```bash
-git clone https://github.com/<your-username>/devops-lms.git
+```text
+.
+|-- app/
+|   |-- api/search/route.ts          # Search endpoint
+|   |-- tracks/[trackId]/...         # Track/module/lesson routes
+|   |-- layout.tsx                   # Root app layout and providers
+|   `-- page.tsx                     # Dashboard/home page
+|-- components/
+|   |-- layout/                      # App shell, nav, sidebar, search dialog
+|   |-- lesson/                      # Lesson UI blocks, quiz, notes panel
+|   `-- ui/                          # Reusable UI primitives
+|-- lib/
+|   |-- content/                     # All track/module/lesson definitions
+|   |-- hooks/                       # useProfile, useProgress, useNotes, etc.
+|   `-- utils.ts
+|-- prisma/
+|   |-- schema.prisma
+|   `-- migrations/
+|-- public/
+|   `-- screenshots/
+|-- Dockerfile
+`-- README.md
 ```
 
-**2. Enter the project folder**
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- npm 10+
+- Git
+
+### 1. Clone the repository
 
 ```bash
-cd devops-lms
+git clone https://github.com/Atharv1906/DEVOPS_Notes.git
+cd DEVOPS_Notes
 ```
 
-**3. Install dependencies**
-
-This installs all the libraries the project needs. It may take a minute.
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-**4. Start the development server**
+### 3. Create environment file
+
+Create a `.env` file in the project root:
+
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+### 4. Start development server
 
 ```bash
 npm run dev
 ```
 
-**5. Open the app**
+Open http://localhost:3000
 
-Open your browser and go to: [http://localhost:3000](http://localhost:3000)
-
-You'll be asked to create a learner profile on first launch. Enter any name and click **Get Started**.
-
-> **Tip:** The development server has hot reload — any changes you make to the code will appear in the browser instantly without needing to restart.
-
----
-
-## Running with Docker
-
-Docker lets you run the app in a container without installing Node.js. This is the recommended way to run it in production.
-
-### What you need
-
-- **Docker Desktop** — download from [docker.com](https://www.docker.com/products/docker-desktop). Install it and make sure it's running (you'll see the Docker icon in your taskbar/menu bar).
-
-### Option 1 — Pull the pre-built image from GitHub Container Registry
-
-If the project has been pushed to GitHub, you can pull the ready-made image directly:
+### 5. Create a production build (optional)
 
 ```bash
-docker pull ghcr.io/<github-username>/<repo-name>:latest
-docker run -p 3000:3000 ghcr.io/<github-username>/<repo-name>:latest
+npm run build
+npm run start
 ```
 
-Then open [http://localhost:3000](http://localhost:3000).
+## Environment Variables
 
-### Option 2 — Build the image yourself
+The project reads environment values via Prisma config and Next runtime.
 
-If you've cloned the repository and want to build locally:
+Required:
+
+- `DATABASE_URL`: SQLite URL for Prisma datasource.
+
+Example:
+
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+## Run with Docker
+
+The repository includes a multi-stage `Dockerfile` using standalone Next.js output.
+
+### Build image
 
 ```bash
-# Build the image (this takes a few minutes the first time)
 docker build -t devops-lms .
-
-# Run the container
-docker run -p 3000:3000 devops-lms
 ```
 
-Then open [http://localhost:3000](http://localhost:3000).
-
-To stop the container, press `Ctrl + C` in the terminal.
-
-### Run in the background (detached mode)
-
-If you want the container to keep running after you close the terminal:
+### Run container
 
 ```bash
-docker run -d -p 3000:3000 --name devops-lms devops-lms
+docker run --rm -p 3000:3000 devops-lms
 ```
 
-To stop it later:
+Open http://localhost:3000
+
+### Run detached
+
+```bash
+docker run -d --name devops-lms -p 3000:3000 devops-lms
+```
+
+Stop later:
 
 ```bash
 docker stop devops-lms
 ```
 
----
+## Database and Prisma
 
-## Building using Docker Compose (Self Hosting)
-## Docker Compose
+Prisma schema is present with models:
 
-```bash
-docker compose up -d
-```
+- `Profile`
+- `Progress`
+- `Bookmark`
 
-Example compose file:
+Current user-facing hooks (`useProfile`, `useProgress`, `useNotes`) store data in `localStorage`.
 
-```yaml
-services:
-  improving-everyday:
-    image: ghcr.io/sooraj-sky/improving-everyday:latest
-    container_name: devops-local-book
-
-    ports:
-      - "3000:3000"
-
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOSTNAME: 0.0.0.0
-
-    restart: unless-stopped
-```
-
-## Building for Production (without Docker)
-
-If you want to run the optimised production build directly with Node.js:
+If you want to initialize the SQLite database for backend work:
 
 ```bash
-# Build the app
-npm run build
-
-# Start the production server
-npm start
+npx prisma migrate dev
+npx prisma generate
 ```
 
-The app will be available at [http://localhost:3000](http://localhost:3000). The production build is faster and uses less memory than the development server.
+To inspect data:
 
----
-
-## Tech Stack
-
-| Technology | Purpose |
-|-----------|---------|
-| [Next.js](https://nextjs.org) | React framework (App Router) |
-| TypeScript | Type-safe JavaScript |
-| Tailwind CSS | Styling |
-| localStorage | All data storage — no database needed |
-| React Context | State management for profiles and progress |
-| Lucide React | Icons |
-
----
-
-## Project Structure
-
-```
-devops-lms/
-├── app/                  # Pages and routes (Next.js App Router)
-├── components/
-│   ├── layout/           # Sidebar, top nav, app shell
-│   ├── lesson/           # Lesson viewer, code blocks, quizzes
-│   └── ui/               # Reusable UI primitives (buttons, dialogs, etc.)
-├── lib/
-│   ├── content/          # All 20 learning tracks as TypeScript files
-│   └── hooks/            # React hooks (useProfile, useProgress, useNotes, useTheme)
-└── public/               # Static assets and screenshots
+```bash
+npx prisma studio
 ```
 
----
+## Available Scripts
 
-## Adding a New Track
+From `package.json`:
 
-Each learning track is a single TypeScript file. To add your own:
+- `npm run dev` - Start development server.
+- `npm run build` - Create production build.
+- `npm run start` - Start production server.
+- `npm run lint` - Run ESLint.
 
-1. Create `lib/content/my-topic.ts` — copy the structure from any existing file like `lib/content/linux.ts`
-2. Import and add it to the `tracks` array in `lib/content/index.ts`
-3. Add a gradient colour class for the track card in `app/globals.css`
+## How Content Is Organized
 
----
+All learning content is defined in TypeScript under `lib/content/`.
+
+- Each track is defined in a dedicated file (for example `linux.ts`, `docker.ts`, `kubernetes.ts`).
+- `lib/content/index.ts` exports the final ordered `tracks` array.
+- Search results are served by `app/api/search/route.ts` using `searchLessons()`.
+
+To add a new track:
+
+1. Add a new track file in `lib/content/`.
+2. Export/import it in `lib/content/index.ts`.
+3. Ensure ids are unique and routing-safe.
+
+## Screenshots
+
+### Dashboard
+
+![Dashboard](public/screenshots/dashboard.png)
+
+### Track View
+
+![Track](public/screenshots/track.png)
+
+### Lesson View
+
+![Lesson](public/screenshots/lesson.png)
 
 ## Troubleshooting
 
-**`npm install` fails**
-Make sure you have Node.js v18 or higher. Run `node -v` to check. If the version is lower, download the latest LTS from [nodejs.org](https://nodejs.org).
+### Remote add fails with "remote origin already exists"
 
-**Port 3000 is already in use**
-Another app is using port 3000. Either stop that app, or run the dev server on a different port:
+Use:
+
+```bash
+git remote set-url origin https://github.com/Atharv1906/DEVOPS_Notes.git
+```
+
+### Port 3000 already in use
+
+Use a different port:
+
 ```bash
 npm run dev -- -p 3001
 ```
-Then open [http://localhost:3001](http://localhost:3001).
 
-**Docker build fails with "Cannot connect to the Docker daemon"**
-Docker Desktop is not running. Open it from your Applications folder (Mac) or Start menu (Windows) and wait for it to fully start before running the build command again.
+### Prisma complains about DATABASE_URL
 
-**Changes I make to the code don't appear**
-Make sure the development server (`npm run dev`) is running. If it is, try refreshing the browser. If the issue persists, stop the server with `Ctrl + C` and start it again.
-#   D E V O P S _ N o t e s  
- 
+Ensure `.env` exists in project root and includes:
+
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+### Docker build fails
+
+- Ensure Docker Desktop/Engine is running.
+- Retry build after dependency install succeeds locally.
+
+## Roadmap Ideas
+
+- Persist progress/notes/bookmarks to Prisma-backed API.
+- Add authentication (GitHub/Google/email).
+- Add lesson-level coding challenges and auto-evaluation.
+- Introduce spaced repetition and personalized study plans.
+- Add export/import profile backups.
+
+## Contributing
+
+1. Fork the repository.
+2. Create a feature branch.
+3. Commit with clear messages.
+4. Open a pull request with screenshots or sample flow where relevant.
+
+---
+
+If this project helps you, consider starring the repository on GitHub.
